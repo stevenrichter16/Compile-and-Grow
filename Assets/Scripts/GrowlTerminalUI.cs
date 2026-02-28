@@ -2,6 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using GrowlLanguage.Runtime;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 public sealed class GrowlTerminalUI : MonoBehaviour
 {
@@ -20,6 +23,9 @@ public sealed class GrowlTerminalUI : MonoBehaviour
 
     private void Awake()
     {
+        if (runtimeHostComponent == null)
+            runtimeHostComponent = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+
         if (runButton != null)
             runButton.onClick.AddListener(RunCurrentSource);
         if (clearButton != null)
@@ -39,9 +45,27 @@ public sealed class GrowlTerminalUI : MonoBehaviour
         if (!runOnCtrlEnter || sourceInput == null || !sourceInput.isFocused)
             return;
 
-        bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-        if (ctrl && Input.GetKeyDown(KeyCode.Return))
+        if (IsRunShortcutPressed())
             RunCurrentSource();
+    }
+
+    private static bool IsRunShortcutPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null)
+        {
+            bool ctrl = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
+            if (ctrl && keyboard.enterKey.wasPressedThisFrame)
+                return true;
+        }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+        bool ctrlLegacy = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+        return ctrlLegacy && Input.GetKeyDown(KeyCode.Return);
+#else
+        return false;
+#endif
     }
 
     public void RunCurrentSource()
@@ -53,10 +77,10 @@ public sealed class GrowlTerminalUI : MonoBehaviour
         }
 
         IGrowlRuntimeHost runtimeHost = runtimeHostComponent as IGrowlRuntimeHost;
-        if (runtimeHostComponent != null && runtimeHost == null)
+        if (runtimeHost == null)
         {
-            Debug.LogError("Runtime Host Component must implement IGrowlRuntimeHost.", this);
-            return;
+            runtimeHostComponent = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+            runtimeHost = runtimeHostComponent as IGrowlRuntimeHost;
         }
 
         RuntimeResult result = GrowlRuntime.Execute(sourceInput.text, new RuntimeOptions
