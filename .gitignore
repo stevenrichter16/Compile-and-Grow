@@ -1,0 +1,48 @@
+# Unity generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+UserSettings/
+
+# Asset meta data should stay tracked
+!Assets/**/*.meta
+
+# Visual Studio / Rider
+.vs/
+*.csproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Unity cache
+/[Aa]ssets/[Aa]ssetStoreTools*
+
+# Plastic SCM
+.plastic/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Codex/Claude local tools
+.claude/
+
+# Misc
+*.stacktrace
