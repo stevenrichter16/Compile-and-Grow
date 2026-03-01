@@ -191,6 +191,50 @@ namespace CodeEditor.View
             }
         }
 
+        public TextPosition GetTextPosition(Vector2 localPos, DocumentModel doc)
+        {
+            int totalLines = doc.LineCount;
+
+            int line = Mathf.FloorToInt(-localPos.y / _lineHeight);
+            line = Mathf.Clamp(line, 0, totalLines - 1);
+
+            int column;
+            if (_lineToPoolIndex.TryGetValue(line, out int slot))
+            {
+                var tmp = _pool[slot];
+                tmp.ForceMeshUpdate();
+                var textInfo = tmp.textInfo;
+
+                if (textInfo == null || textInfo.characterCount == 0)
+                {
+                    column = 0;
+                }
+                else
+                {
+                    column = textInfo.characterCount;
+                    for (int i = 0; i < textInfo.characterCount; i++)
+                    {
+                        var charInfo = textInfo.characterInfo[i];
+                        float midX = (charInfo.origin + charInfo.xAdvance) * 0.5f;
+                        if (localPos.x < midX)
+                        {
+                            column = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                column = Mathf.Max(0, Mathf.RoundToInt(localPos.x / _charWidth));
+            }
+
+            int lineLength = doc.GetLineLength(line);
+            column = Mathf.Clamp(column, 0, lineLength);
+
+            return new TextPosition(line, column);
+        }
+
         internal string GetDisplayedText(int lineIndex)
         {
             if (_lineToPoolIndex.TryGetValue(lineIndex, out int slot))

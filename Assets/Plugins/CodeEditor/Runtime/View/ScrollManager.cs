@@ -77,6 +77,19 @@ namespace CodeEditor.View
                 ScrollToLine(Mathf.Max(0, line - (VisibleLineCount - buffer - 1)));
         }
 
+        public void ScrollByLines(float linesDelta)
+        {
+            float contentHeight = _content.rect.height;
+            float viewH = _scrollRect.viewport != null ? _scrollRect.viewport.rect.height : 0f;
+            float scrollableHeight = contentHeight - viewH;
+            if (scrollableHeight <= 0f) return;
+
+            float normalizedDelta = (linesDelta * _lineHeight) / scrollableHeight;
+            _scrollRect.verticalNormalizedPosition = Mathf.Clamp01(
+                _scrollRect.verticalNormalizedPosition - normalizedDelta);
+            RecalculateVisibleRange();
+        }
+
         private void OnScroll(Vector2 _)
         {
             RecalculateVisibleRange();

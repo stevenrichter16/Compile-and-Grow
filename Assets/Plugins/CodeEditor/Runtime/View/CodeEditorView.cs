@@ -2,9 +2,13 @@ using System;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.EventSystems;
 using CodeEditor.Core;
 using CodeEditor.Editor;
 using CodeEditor.Language;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem.UI;
+#endif
 
 namespace CodeEditor.View
 {
@@ -41,6 +45,8 @@ namespace CodeEditor.View
         private SelectionRenderer _selection;
         private ScrollManager _scrollManager;
         private InputHandler _inputHandler;
+        private MouseHandler _mouseHandler;
+        private GutterClickHandler _gutterClickHandler;
         private Image _currentLineHighlight;
         private int _lastSyncedVersion = -1;
 
@@ -98,6 +104,8 @@ namespace CodeEditor.View
 
         private void Awake()
         {
+            EnsureUiEventInfrastructure();
+
             _doc = new DocumentModel();
             var config = new EditorConfig { IndentSize = _indentSize };
             _controller = new EditorController(_doc, config);
@@ -152,8 +160,18 @@ namespace CodeEditor.View
             }
         }
 
+        private int _hiddenInputRaycastCleanupFrames = 3;
+
         private void LateUpdate()
         {
+            // TMP_InputField creates a Caret child lazily; disable its raycastTarget
+            if (_hiddenInputRaycastCleanupFrames > 0 && _hiddenInput != null)
+            {
+                _hiddenInputRaycastCleanupFrames--;
+                foreach (var g in _hiddenInput.GetComponentsInChildren<Graphic>(true))
+                    g.raycastTarget = false;
+            }
+
             if (_doc == null || _doc.Version == _lastSyncedVersion) return;
             SyncView();
         }
@@ -241,14 +259,38 @@ namespace CodeEditor.View
                 _inputHandler = _hiddenInput.gameObject.AddComponent<InputHandler>();
                 _inputHandler.Initialize(_controller, _hiddenInput, this);
 
-                // Make the input field visually invisible but still active
-                var inputImage = _hiddenInput.GetComponent<Image>();
-                if (inputImage != null)
-                    inputImage.color = new Color(0, 0, 0, 0);
+                // Disable raycastTarget on ALL graphics under HiddenInput
+                // (Image, Text, Placeholder, and the runtime Caret created by TMP_InputField)
+                foreach (var g in _hiddenInput.GetComponentsInChildren<Graphic>(true))
+                    g.raycastTarget = false;
 
                 // Hide the input field's text display
                 if (_hiddenInput.textComponent != null)
                     _hiddenInput.textComponent.color = new Color(0, 0, 0, 0);
+            }
+
+            // Initialize MouseHandler — attach to ScrollArea (which already has a raycastable Image)
+            // and pass _textArea for coordinate conversion
+            if (_scrollRect != null && _textArea != null)
+            {
+                RectTransform viewportRt = _scrollRect.viewport != null
+                    ? _scrollRect.viewport
+                    : _scrollRect.GetComponent<RectTransform>();
+
+                _mouseHandler = _scrollRect.gameObject.AddComponent<MouseHandler>();
+                _mouseHandler.Initialize(_controller, this, _linePool, _scrollManager, _textArea, viewportRt);
+            }
+
+            // Initialize GutterClickHandler
+            if (_gutterArea != null && _showLineNumbers)
+            {
+                var gutterImage = _gutterArea.GetComponent<Image>();
+                if (gutterImage != null)
+                    gutterImage.raycastTarget = true;
+
+                float lh = _linePool != null ? _linePool.LineHeight : _fontSize * 1.2f;
+                _gutterClickHandler = _gutterArea.gameObject.AddComponent<GutterClickHandler>();
+                _gutterClickHandler.Initialize(_controller, this, lh, _gutterArea);
             }
         }
 
@@ -268,7 +310,9 @@ namespace CodeEditor.View
             if (_gutter != null)
                 _gutter.UpdateFontSize(_fontSize * 0.85f, lineHeight);
 
-            // 4. Gutter layout: keep existing width — only font size inside changes
+            // 4. GutterClickHandler: update line height
+            if (_gutterClickHandler != null)
+                _gutterClickHandler.UpdateLineHeight(lineHeight);
 
             // 5. Caret: scale width proportionally (2px at 16pt)
             if (_caret != null)
@@ -361,6 +405,27 @@ namespace CodeEditor.View
             UpdateCaret();
             UpdateSelection(first, last);
             UpdateCurrentLineHighlight();
+        }
+
+        private void EnsureUiEventInfrastructure()
+        {
+            if (EventSystem.current == null && FindObjectOfType<EventSystem>() == null)
+            {
+                var esGo = new GameObject("EventSystem", typeof(EventSystem));
+#if ENABLE_INPUT_SYSTEM
+                esGo.AddComponent<InputSystemUIInputModule>();
+#else
+                esGo.AddComponent<StandaloneInputModule>();
+#endif
+                Debug.LogWarning("[View] Auto-created EventSystem because none was found in scene.");
+            }
+
+            var parentCanvas = GetComponentInParent<Canvas>();
+            if (parentCanvas != null && parentCanvas.GetComponent<GraphicRaycaster>() == null)
+            {
+                parentCanvas.gameObject.AddComponent<GraphicRaycaster>();
+                Debug.LogWarning("[View] Added missing GraphicRaycaster to parent Canvas.");
+            }
         }
     }
 }

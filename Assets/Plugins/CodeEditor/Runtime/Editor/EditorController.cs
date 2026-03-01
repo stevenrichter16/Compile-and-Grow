@@ -398,9 +398,45 @@ namespace CodeEditor.Editor
             return new TextPosition(pos.Line, col);
         }
 
-        private static bool IsWordChar(char c)
+        internal static bool IsWordChar(char c)
         {
             return char.IsLetterOrDigit(c) || c == '_';
+        }
+
+        public TextRange GetWordBoundsAt(TextPosition pos)
+        {
+            var p = TextOperations.ClampPosition(_doc, pos);
+            string line = _doc.GetLine(p.Line);
+
+            if (line.Length == 0)
+                return new TextRange(p, p);
+
+            int col = Math.Min(p.Column, line.Length - 1);
+            if (col < 0) col = 0;
+
+            char ch = line[col];
+            int start = col;
+            int end = col;
+
+            if (IsWordChar(ch))
+            {
+                while (start > 0 && IsWordChar(line[start - 1])) start--;
+                while (end < line.Length - 1 && IsWordChar(line[end + 1])) end++;
+            }
+            else if (char.IsWhiteSpace(ch))
+            {
+                while (start > 0 && char.IsWhiteSpace(line[start - 1])) start--;
+                while (end < line.Length - 1 && char.IsWhiteSpace(line[end + 1])) end++;
+            }
+            else
+            {
+                while (start > 0 && !IsWordChar(line[start - 1]) && !char.IsWhiteSpace(line[start - 1])) start--;
+                while (end < line.Length - 1 && !IsWordChar(line[end + 1]) && !char.IsWhiteSpace(line[end + 1])) end++;
+            }
+
+            return new TextRange(
+                new TextPosition(p.Line, start),
+                new TextPosition(p.Line, end + 1));
         }
     }
 }
