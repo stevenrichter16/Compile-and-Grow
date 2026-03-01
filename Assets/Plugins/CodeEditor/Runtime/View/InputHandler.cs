@@ -19,6 +19,12 @@ namespace CodeEditor.View
         private int _suppressInputFrame = -1;
         private int _deletionHandledFrame = -1;
 
+        // Key repeat
+        private KeyCode _repeatKey = KeyCode.None;
+        private float _repeatTimer;
+        private const float RepeatDelay = 0.4f;
+        private const float RepeatRate = 0.035f;
+
         public void Initialize(EditorController controller, TMP_InputField inputField, CodeEditorView editorView = null)
         {
             _controller = controller;
@@ -169,104 +175,83 @@ namespace CodeEditor.View
                 }
             }
 
-            if (GetKeyDown(KeyCode.Tab))
+            if (HandleRepeatable(KeyCode.Tab))
             {
-                string beforeLine = _controller.Document.GetLine(_controller.Document.Cursor.Line);
                 _controller.Tab(shift);
-                string afterLine = _controller.Document.GetLine(_controller.Document.Cursor.Line);
-                Debug.Log($"[Input] {(shift ? "Shift+" : "")}Tab | before=\"{beforeLine}\" after=\"{afterLine}\" | {LineStats()} | {SelectionStats()}");
                 SyncAndSuppressFrame();
                 return;
             }
 
-            if (GetKeyDown(KeyCode.LeftArrow))
+            if (HandleRepeatable(KeyCode.LeftArrow))
             {
                 _controller.MoveCursor(MoveDirection.Left, shift, word: ctrl);
-                Debug.Log($"[Input] {(ctrl ? "Ctrl+" : "")}{(shift ? "Shift+" : "")}Left | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
-            if (GetKeyDown(KeyCode.RightArrow))
+            if (HandleRepeatable(KeyCode.RightArrow))
             {
                 _controller.MoveCursor(MoveDirection.Right, shift, word: ctrl);
-                Debug.Log($"[Input] {(ctrl ? "Ctrl+" : "")}{(shift ? "Shift+" : "")}Right | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
-            if (GetKeyDown(KeyCode.UpArrow))
+            if (HandleRepeatable(KeyCode.UpArrow))
             {
                 _controller.MoveCursor(MoveDirection.Up, shift);
-                Debug.Log($"[Input] {(shift ? "Shift+" : "")}Up | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
-            if (GetKeyDown(KeyCode.DownArrow))
+            if (HandleRepeatable(KeyCode.DownArrow))
             {
                 _controller.MoveCursor(MoveDirection.Down, shift);
-                Debug.Log($"[Input] {(shift ? "Shift+" : "")}Down | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
 
-            if (GetKeyDown(KeyCode.Home))
+            if (HandleRepeatable(KeyCode.Home))
             {
                 _controller.MoveCursor(ctrl ? MoveDirection.DocumentStart : MoveDirection.Home, shift);
-                Debug.Log($"[Input] {(ctrl ? "Ctrl+" : "")}{(shift ? "Shift+" : "")}Home | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
-            if (GetKeyDown(KeyCode.End))
+            if (HandleRepeatable(KeyCode.End))
             {
                 _controller.MoveCursor(ctrl ? MoveDirection.DocumentEnd : MoveDirection.End, shift);
-                Debug.Log($"[Input] {(ctrl ? "Ctrl+" : "")}{(shift ? "Shift+" : "")}End | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
 
-            if (GetKeyDown(KeyCode.PageUp))
+            if (HandleRepeatable(KeyCode.PageUp))
             {
                 _controller.MoveCursor(MoveDirection.PageUp, shift);
-                Debug.Log($"[Input] {(shift ? "Shift+" : "")}PageUp | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
-            if (GetKeyDown(KeyCode.PageDown))
+            if (HandleRepeatable(KeyCode.PageDown))
             {
                 _controller.MoveCursor(MoveDirection.PageDown, shift);
-                Debug.Log($"[Input] {(shift ? "Shift+" : "")}PageDown | {LineStats()} | {SelectionStats()}");
                 SyncSelectionToInputField();
                 return;
             }
 
-            if (GetKeyDown(KeyCode.Backspace))
+            if (HandleRepeatable(KeyCode.Backspace))
             {
                 if (Time.frameCount == _deletionHandledFrame)
                 {
-                    // Already handled by OnInputChanged this frame (TMP fired first)
                     SyncAndSuppressFrame();
                     return;
                 }
-                var doc = _controller.Document;
-                string lineBefore = doc.GetLine(doc.Cursor.Line);
-                string selBefore = SelectionStats();
                 _controller.Backspace();
-                string lineAfter = doc.GetLine(doc.Cursor.Line);
-                Debug.Log($"[Input] Backspace | {selBefore} | before=\"{lineBefore}\" after=\"{lineAfter}\" | {LineStats()}");
                 SyncAndSuppressFrame();
                 return;
             }
-            if (GetKeyDown(KeyCode.Delete))
+            if (HandleRepeatable(KeyCode.Delete))
             {
                 if (Time.frameCount == _deletionHandledFrame)
                 {
                     SyncAndSuppressFrame();
                     return;
                 }
-                var doc = _controller.Document;
-                string lineBefore = doc.GetLine(doc.Cursor.Line);
                 _controller.Delete();
-                string lineAfter = doc.GetLine(doc.Cursor.Line);
-                Debug.Log($"[Input] Delete | before=\"{lineBefore}\" after=\"{lineAfter}\" | {LineStats()}");
                 SyncAndSuppressFrame();
                 return;
             }
@@ -484,6 +469,32 @@ namespace CodeEditor.View
 #else
             return false;
 #endif
+        }
+
+        private bool HandleRepeatable(KeyCode key)
+        {
+            if (GetKeyDown(key))
+            {
+                _repeatKey = key;
+                _repeatTimer = RepeatDelay;
+                return true;
+            }
+
+            if (_repeatKey == key && IsKeyPressed(key))
+            {
+                _repeatTimer -= Time.unscaledDeltaTime;
+                if (_repeatTimer <= 0f)
+                {
+                    _repeatTimer = RepeatRate;
+                    return true;
+                }
+            }
+            else if (_repeatKey == key)
+            {
+                _repeatKey = KeyCode.None;
+            }
+
+            return false;
         }
 
         private static bool GetKeyDown(KeyCode key)
