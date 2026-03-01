@@ -40,6 +40,8 @@ public sealed class GrowthTickManager : MonoBehaviour
     private readonly List<SignalRecord> _signals = new List<SignalRecord>();
     private readonly Dictionary<string, object> _customWorldValues = new Dictionary<string, object>(StringComparer.Ordinal);
 
+    public event Action<long> OnTickAdvanced;
+
     public long CurrentTick => currentTick;
     public long SignalCount => _signals.Count;
     public long TotalSpawnedSeeds => totalSpawnedSeeds;
@@ -74,6 +76,7 @@ public sealed class GrowthTickManager : MonoBehaviour
             return;
 
         currentTick += count;
+        OnTickAdvanced?.Invoke(currentTick);
     }
 
     public void SetTick(long tick)

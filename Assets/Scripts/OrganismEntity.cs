@@ -8,6 +8,9 @@ public sealed class OrganismEntity : MonoBehaviour
     [Header("Identity")]
     [SerializeField] private string organismName = "unnamed";
 
+    [Header("Growl")]
+    [SerializeField, TextArea(3, 10)] private string growlSource = "";
+
     [Header("Core State")]
     [SerializeField] private bool alive = true;
     [SerializeField] private int age;
@@ -21,7 +24,14 @@ public sealed class OrganismEntity : MonoBehaviour
     private readonly Dictionary<string, object> _memory = new Dictionary<string, object>(StringComparer.Ordinal);
 
     public string OrganismName => organismName;
+    public bool IsAlive => alive;
     public IDictionary<string, object> Memory => _memory;
+
+    public string GrowlSource
+    {
+        get => growlSource;
+        set => growlSource = value ?? "";
+    }
 
     public bool TryGetState(string key, out object value)
     {

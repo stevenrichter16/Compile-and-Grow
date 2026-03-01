@@ -25,6 +25,11 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         EnsureProxies();
     }
 
+    public void SetOrganism(OrganismEntity target)
+    {
+        organismEntity = target;
+    }
+
     public void PopulateGlobals(IDictionary<string, object> globals)
     {
         EnsureSystems();
