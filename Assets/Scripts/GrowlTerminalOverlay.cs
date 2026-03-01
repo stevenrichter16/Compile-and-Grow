@@ -59,11 +59,19 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
     private int _sourceKeyboardControl;
     private bool _queuedTabIndent;
     private bool _queuedTabOutdent;
+    private bool _queuedAutoIndentEnter;
+    private string _queuedEnterSourceSnapshot;
+    private int _queuedEnterSelectionStart = -1;
+    private int _queuedEnterSelectionEnd = -1;
     private int _pendingCursorIndex = -1;
     private int _pendingSelectIndex = -1;
+    private readonly List<int> _lineStartCache = new List<int>();
+    private bool _lineCacheDirty = true;
+    private float _lineAdvance = 14f; // per-line advance in pixels, cached when style changes
     private GUIStyle _labelStyle;
     private GUIStyle _textAreaStyle;
     private GUIStyle _outputStyle;
+    private GUIStyle _lineNumberStyle;
     private GUIStyle _buttonStyle;
     private GUIStyle _toolbarStyle;
     private GUIStyle _footerStyle;
@@ -96,6 +104,10 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
         _resizeControlId = 0;
         _queuedTabIndent = false;
         _queuedTabOutdent = false;
+        _queuedAutoIndentEnter = false;
+        _queuedEnterSourceSnapshot = null;
+        _queuedEnterSelectionStart = -1;
+        _queuedEnterSelectionEnd = -1;
         _pendingCursorIndex = -1;
         _pendingSelectIndex = -1;
     }
@@ -141,7 +153,7 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
     {
         float uiScale = GetUiScale();
         EnsureStyles(uiScale);
-        CaptureTabForSourceEditor();
+        CaptureSourceEditorKeyOverrides();
 
         float sectionGap = 5f * uiScale;
         float buttonHeight = 30f * uiScale;
@@ -185,14 +197,8 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
         }
 
         GUILayout.Label("Source", _labelStyle, GUILayout.Height(labelHeight));
-        _sourceScroll = GUILayout.BeginScrollView(_sourceScroll, GUILayout.Height(sourceHeight));
-        GUI.SetNextControlName(SourceEditorControlName);
-        _source = GUILayout.TextArea(_source, _textAreaStyle, GUILayout.ExpandHeight(true));
-        GUILayout.EndScrollView();
-        if (GUI.GetNameOfFocusedControl() == SourceEditorControlName)
-            _sourceKeyboardControl = GUIUtility.keyboardControl;
-        ApplyQueuedTabIndent();
-        ApplyPendingSourceEditorState();
+        Rect sourceRect = GUILayoutUtility.GetRect(10f, 100000f, sourceHeight, sourceHeight, GUILayout.ExpandWidth(true));
+        DrawSourceEditor(sourceRect, uiScale);
 
         GUILayout.Space(sectionGap);
         GUILayout.BeginHorizontal();
@@ -219,21 +225,30 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
         GUI.DragWindow(new Rect(0f, 0f, 10000f, 22f));
     }
 
-    private void CaptureTabForSourceEditor()
+    private void CaptureSourceEditorKeyOverrides()
     {
         Event evt = Event.current;
-        if (evt.keyCode != KeyCode.Tab)
+        bool isTab = evt.keyCode == KeyCode.Tab;
+        bool isEnter = evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter;
+        if (!isTab && !isEnter)
             return;
 
-        bool sourceFocused = GUI.GetNameOfFocusedControl() == SourceEditorControlName ||
-                             (_sourceKeyboardControl != 0 && GUIUtility.keyboardControl == _sourceKeyboardControl);
-        if (!sourceFocused)
+        if (!IsSourceEditorFocused())
             return;
 
         if (evt.type == EventType.KeyDown)
         {
-            _queuedTabIndent = true;
-            _queuedTabOutdent = evt.shift;
+            if (isTab)
+            {
+                _queuedTabIndent = true;
+                _queuedTabOutdent = evt.shift;
+            }
+            else if (isEnter)
+            {
+                _queuedAutoIndentEnter = true;
+                QueueAutoIndentSnapshot();
+            }
+
             evt.Use();
             return;
         }
@@ -242,24 +257,149 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
             evt.Use();
     }
 
-    private void ApplyQueuedTabIndent()
+    private void DrawSourceEditor(Rect containerRect, float uiScale)
     {
-        if (!_queuedTabIndent)
-            return;
+        float gutterWidth = Mathf.Max(44f * uiScale, 42f);
+        float contentPadding = Mathf.Max(4f, 4f * uiScale);
+        float lineAdvance = _lineAdvance;
+
+        EnsureLineStartCache();
+        // Style vertical padding is applied once to the whole TextArea, not per line.
+        float styleVertPad = _textAreaStyle.padding.top + _textAreaStyle.padding.bottom;
+        float contentHeight = Mathf.Max(containerRect.height,
+            styleVertPad + (_lineStartCache.Count * lineAdvance) + (2f * contentPadding));
+        float contentWidth = Mathf.Max(containerRect.width - 2f, gutterWidth + 180f);
+
+        Rect viewRect = new Rect(0f, 0f, contentWidth, contentHeight);
+        _sourceScroll = GUI.BeginScrollView(containerRect, _sourceScroll, viewRect, false, true);
+
+        Rect gutterRect = new Rect(0f, 0f, gutterWidth, viewRect.height);
+        DrawSolidRect(gutterRect, new Color(0f, 0f, 0f, 0.18f));
+        DrawLineNumbers(gutterRect, lineAdvance, contentPadding);
+
+        Rect editorRect = new Rect(
+            gutterWidth + contentPadding,
+            contentPadding,
+            Mathf.Max(100f, viewRect.width - gutterWidth - (2f * contentPadding)),
+            Mathf.Max(lineAdvance + 8f, viewRect.height - (2f * contentPadding)));
+
+        GUI.SetNextControlName(SourceEditorControlName);
+        string newSource = GUI.TextArea(editorRect, _source, _textAreaStyle);
+
+        // Highlight drawn after TextArea so graphicalCursorPos reflects the current frame's cursor.
+        DrawCurrentLineHighlight(editorRect);
+
+        if (!string.Equals(newSource, _source))
+        {
+            _source = newSource;
+            MarkLineCacheDirty();
+        }
+
+        if (GUI.GetNameOfFocusedControl() == SourceEditorControlName)
+            _sourceKeyboardControl = GUIUtility.keyboardControl;
+
+        ApplyQueuedEditorActions();
+        ApplyPendingSourceEditorState();
+
+        GUI.EndScrollView();
+    }
+
+    private bool IsSourceEditorFocused()
+    {
+        return GUI.GetNameOfFocusedControl() == SourceEditorControlName ||
+               (_sourceKeyboardControl != 0 && GUIUtility.keyboardControl == _sourceKeyboardControl);
+    }
+
+    private void QueueAutoIndentSnapshot()
+    {
+        string snapshot = _source ?? string.Empty;
+        int start;
+        int end;
 
         TextEditor textEditor = GetSourceTextEditor();
-        if (textEditor == null)
-            return;
-
-        if (_queuedTabOutdent)
-            OutdentCurrentLine(textEditor);
+        if (textEditor != null)
+        {
+            start = Mathf.Min(textEditor.cursorIndex, textEditor.selectIndex);
+            end = Mathf.Max(textEditor.cursorIndex, textEditor.selectIndex);
+        }
         else
-            IndentCurrentLine(textEditor);
+        {
+            int fallback = _pendingCursorIndex >= 0 ? _pendingCursorIndex : snapshot.Length;
+            start = Mathf.Clamp(fallback, 0, snapshot.Length);
+            end = start;
+        }
 
-        _pendingCursorIndex = textEditor.cursorIndex;
-        _pendingSelectIndex = textEditor.cursorIndex;
-        _queuedTabIndent = false;
-        _queuedTabOutdent = false;
+        _queuedEnterSourceSnapshot = snapshot;
+        _queuedEnterSelectionStart = Mathf.Clamp(start, 0, snapshot.Length);
+        _queuedEnterSelectionEnd = Mathf.Clamp(end, 0, snapshot.Length);
+    }
+
+    private void ApplyQueuedEditorActions()
+    {
+        TextEditor textEditor = GetSourceTextEditor();
+
+        if (_queuedAutoIndentEnter)
+        {
+            ApplyAutoIndentOnEnter(textEditor);
+            _queuedAutoIndentEnter = false;
+        }
+
+        if (textEditor == null)
+        {
+            _queuedTabIndent = false;
+            _queuedTabOutdent = false;
+            return;
+        }
+
+        if (_queuedTabIndent)
+        {
+            ApplyQueuedTabIndent(textEditor);
+            _queuedTabIndent = false;
+            _queuedTabOutdent = false;
+        }
+    }
+
+    private void ApplyQueuedTabIndent(TextEditor textEditor)
+    {
+        TerminalTextEditResult result = GrowlTerminalTextOps.ApplyTabIndentation(
+            _source,
+            textEditor.cursorIndex,
+            textEditor.selectIndex,
+            indentSize,
+            _queuedTabOutdent);
+
+        _source = result.Text;
+        MarkLineCacheDirty();
+
+        textEditor.cursorIndex = result.CursorIndex;
+        textEditor.selectIndex = result.SelectIndex;
+        _pendingCursorIndex = result.CursorIndex;
+        _pendingSelectIndex = result.SelectIndex;
+    }
+
+    private void ApplyAutoIndentOnEnter(TextEditor textEditor)
+    {
+        TerminalTextEditResult result = GrowlTerminalTextOps.ApplyEnterAutoIndent(
+            _queuedEnterSourceSnapshot ?? _source,
+            _queuedEnterSelectionStart,
+            _queuedEnterSelectionEnd,
+            indentSize);
+
+        _source = result.Text;
+        MarkLineCacheDirty();
+
+        int newCaret = result.CursorIndex;
+        if (textEditor != null)
+        {
+            textEditor.cursorIndex = newCaret;
+            textEditor.selectIndex = newCaret;
+        }
+        _pendingCursorIndex = newCaret;
+        _pendingSelectIndex = newCaret;
+
+        _queuedEnterSourceSnapshot = null;
+        _queuedEnterSelectionStart = -1;
+        _queuedEnterSelectionEnd = -1;
     }
 
     private void ApplyPendingSourceEditorState()
@@ -293,57 +433,96 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
     private void LoadSelectedTemplate()
     {
         _source = BuildTemplateSource(selectedTemplate);
+        MarkLineCacheDirty();
         _sourceScroll = Vector2.zero;
         _pendingCursorIndex = _source.Length;
         _pendingSelectIndex = _source.Length;
     }
 
-    private void IndentCurrentLine(TextEditor textEditor)
+    private void MarkLineCacheDirty()
     {
-        int spaces = Mathf.Max(1, indentSize);
-        string indent = new string(' ', spaces);
-
-        int lineStart = GetCurrentLineStartIndex(textEditor.cursorIndex);
-        _source = _source.Insert(lineStart, indent);
-
-        if (textEditor.cursorIndex >= lineStart)
-            textEditor.cursorIndex += indent.Length;
-        if (textEditor.selectIndex >= lineStart)
-            textEditor.selectIndex += indent.Length;
+        _lineCacheDirty = true;
     }
 
-    private void OutdentCurrentLine(TextEditor textEditor)
+    private void EnsureLineStartCache()
     {
-        int spaces = Mathf.Max(1, indentSize);
-        int lineStart = GetCurrentLineStartIndex(textEditor.cursorIndex);
-
-        int removable = 0;
-        while (removable < spaces &&
-               lineStart + removable < _source.Length &&
-               _source[lineStart + removable] == ' ')
-        {
-            removable++;
-        }
-
-        if (removable <= 0)
+        if (!_lineCacheDirty)
             return;
 
-        _source = _source.Remove(lineStart, removable);
-
-        if (textEditor.cursorIndex > lineStart)
-            textEditor.cursorIndex = Mathf.Max(lineStart, textEditor.cursorIndex - removable);
-        if (textEditor.selectIndex > lineStart)
-            textEditor.selectIndex = Mathf.Max(lineStart, textEditor.selectIndex - removable);
+        _lineStartCache.Clear();
+        _lineStartCache.AddRange(GrowlTerminalTextOps.BuildLineStartCache(_source));
+        _lineCacheDirty = false;
     }
 
-    private int GetCurrentLineStartIndex(int cursorIndex)
+    private int GetLineIndexAtPosition(int position)
     {
-        if (string.IsNullOrEmpty(_source))
-            return 0;
+        EnsureLineStartCache();
+        return GrowlTerminalTextOps.GetLineIndexAtPosition(_lineStartCache, (_source ?? string.Empty).Length, position);
+    }
 
-        int clamped = Mathf.Clamp(cursorIndex, 0, _source.Length);
-        int previousNewline = _source.LastIndexOf('\n', Mathf.Max(0, clamped - 1));
-        return previousNewline < 0 ? 0 : previousNewline + 1;
+    // Returns the per-line advance (font line height + leading) that Unity uses internally.
+    // Two-line differential avoids relying on explicit padding values, which can vary
+    // across Unity versions and skin states. Cached in _lineAdvance on style rebuild.
+    private static float ComputeLineAdvance(GUIStyle style)
+    {
+        float h1 = style.CalcHeight(new GUIContent("A"), 9999f);
+        float h2 = style.CalcHeight(new GUIContent("A\nA"), 9999f);
+        float diff = h2 - h1;
+        if (diff > 0f)
+            return Mathf.Max(8f, diff);
+        // Fallback for edge cases (e.g. not-yet-loaded font).
+        return Mathf.Max(8f, h1 - style.padding.top - style.padding.bottom);
+    }
+
+    private void DrawLineNumbers(Rect gutterRect, float lineHeight, float contentPadding)
+    {
+        EnsureLineStartCache();
+        float yOffset = contentPadding + _textAreaStyle.padding.top;
+        int lineCount = Mathf.Max(1, _lineStartCache.Count);
+        for (int i = 0; i < lineCount; i++)
+        {
+            Rect lineRect = new Rect(
+                gutterRect.x + 2f,
+                yOffset + (i * lineHeight),
+                Mathf.Max(16f, gutterRect.width - 6f),
+                lineHeight);
+            GUI.Label(lineRect, (i + 1).ToString(), _lineNumberStyle);
+        }
+    }
+
+    private void DrawCurrentLineHighlight(Rect editorRect)
+    {
+        float lineY;
+        TextEditor textEditor = GetSourceTextEditor();
+        if (textEditor != null)
+        {
+            // graphicalCursorPos is in editorRect-local space (0,0 = top-left of the rect).
+            // Unity computes it from the same layout engine used to render the text, so it
+            // is always pixel-accurate regardless of font size, padding, or skin changes.
+            lineY = editorRect.y + textEditor.graphicalCursorPos.y;
+        }
+        else
+        {
+            // No TextEditor available yet — fall back to character-index math.
+            int caretIndex = _pendingCursorIndex >= 0 ? _pendingCursorIndex : 0;
+            int lineIndex = GetLineIndexAtPosition(caretIndex);
+            lineY = editorRect.y + _textAreaStyle.padding.top + (lineIndex * _lineAdvance);
+        }
+
+        Rect highlightRect = new Rect(
+            editorRect.x + 1f,
+            lineY,
+            Mathf.Max(2f, editorRect.width - 2f),
+            _lineAdvance);
+        DrawSolidRect(highlightRect, new Color(1f, 0.74f, 0.2f, 0.08f));
+    }
+
+    private static void DrawSolidRect(Rect rect, Color color)
+    {
+        Color previous = GUI.color;
+        GUI.color = color;
+        GUI.DrawTexture(rect, Texture2D.whiteTexture, ScaleMode.StretchToFill, alphaBlend: true);
+        GUI.color = previous;
     }
 
     private void HandleResize(float uiScale)
@@ -490,8 +669,9 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
             _textAreaStyle = new GUIStyle(GUI.skin.textArea)
             {
                 fontSize = bodyFont,
-                wordWrap = true,
+                wordWrap = false,
             };
+            _lineAdvance = ComputeLineAdvance(_textAreaStyle);
         }
 
         if (_outputStyle == null || _outputStyle.fontSize != bodyFont)
@@ -529,6 +709,16 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
             {
                 fontSize = footerFont,
                 alignment = TextAnchor.MiddleLeft,
+            };
+        }
+
+        if (_lineNumberStyle == null || _lineNumberStyle.fontSize != bodyFont)
+        {
+            _lineNumberStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = bodyFont,
+                alignment = TextAnchor.UpperRight,
+                normal = { textColor = new Color(1f, 1f, 1f, 0.7f) },
             };
         }
     }
