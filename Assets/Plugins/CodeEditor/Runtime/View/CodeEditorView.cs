@@ -51,6 +51,7 @@ namespace CodeEditor.View
         private int _lastSyncedVersion = -1;
 
         public event Action<string> TextChanged;
+        public event Action CtrlEnterPressed;
 
         public string Text
         {
@@ -258,6 +259,7 @@ namespace CodeEditor.View
             {
                 _inputHandler = _hiddenInput.gameObject.AddComponent<InputHandler>();
                 _inputHandler.Initialize(_controller, _hiddenInput, this);
+                _inputHandler.CtrlEnterPressed += () => CtrlEnterPressed?.Invoke();
 
                 // Disable raycastTarget on ALL graphics under HiddenInput
                 // (Image, Text, Placeholder, and the runtime Caret created by TMP_InputField)

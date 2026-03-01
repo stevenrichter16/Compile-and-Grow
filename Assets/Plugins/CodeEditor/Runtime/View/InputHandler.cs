@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
@@ -18,6 +19,8 @@ namespace CodeEditor.View
         private bool _ignoreNextChange;
         private int _suppressInputFrame = -1;
         private int _deletionHandledFrame = -1;
+
+        public event Action CtrlEnterPressed;
 
         // Key repeat
         private KeyCode _repeatKey = KeyCode.None;
@@ -258,10 +261,14 @@ namespace CodeEditor.View
 
             if (GetKeyDown(KeyCode.Return) || GetKeyDown(KeyCode.KeypadEnter))
             {
-                var doc = _controller.Document;
-                int linesBefore = doc.LineCount;
+                if (ctrl)
+                {
+                    CtrlEnterPressed?.Invoke();
+                    SyncAndSuppressFrame();
+                    return;
+                }
+
                 _controller.Enter();
-                Debug.Log($"[Input] Enter | lines {linesBefore}->{doc.LineCount} | {LineStats()}");
                 SyncAndSuppressFrame();
                 return;
             }
