@@ -53,6 +53,7 @@ namespace CodeEditor.View
         public void OnPointerDown(PointerEventData eventData)
         {
             if (eventData.button != PointerEventData.InputButton.Left) return;
+            if (_linePool == null || _controller == null) return;
 
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
                 _textAreaRt, eventData.position, eventData.pressEventCamera, out var localPos);
@@ -90,6 +91,7 @@ namespace CodeEditor.View
         public void OnDrag(PointerEventData eventData)
         {
             if (!_isDragging || eventData.button != PointerEventData.InputButton.Left) return;
+            if (_linePool == null || _controller == null) return;
 
             _lastPointerScreenPos = eventData.position;
             _lastEventCamera = eventData.pressEventCamera;

@@ -17,21 +17,25 @@ public sealed class GeneExecutionManager : MonoBehaviour
         if (existing != null)
             return existing;
 
+        // Attach to the same host object as the other runtime systems
+        var bridge = FindObjectOfType<GrowlGameStateBridge>();
+        if (bridge != null)
+            return bridge.gameObject.AddComponent<GeneExecutionManager>();
+
         var go = new GameObject("[GeneExecutionManager]");
-        DontDestroyOnLoad(go);
         return go.AddComponent<GeneExecutionManager>();
     }
 
     private void Start()
     {
-        _tickManager = FindObjectOfType<GrowthTickManager>();
-        _bridge = FindObjectOfType<GrowlGameStateBridge>();
+        _tickManager = GetComponent<GrowthTickManager>() ?? FindObjectOfType<GrowthTickManager>();
+        _bridge = GetComponent<GrowlGameStateBridge>() ?? FindObjectOfType<GrowlGameStateBridge>();
 
         if (_tickManager != null)
             _tickManager.OnTickAdvanced += OnTick;
-
-        if (_tickManager == null)
+        else
             Debug.LogWarning("[GeneExec] No GrowthTickManager found.", this);
+
         if (_bridge == null)
             Debug.LogWarning("[GeneExec] No GrowlGameStateBridge found.", this);
     }
@@ -65,6 +69,9 @@ public sealed class GeneExecutionManager : MonoBehaviour
                 MaxLoopIterations = _maxLoopIterations,
                 Host = _bridge,
             });
+
+            for (int j = 0; j < result.OutputLines.Count; j++)
+                Debug.Log($"[{org.OrganismName}] {result.OutputLines[j]}", org);
 
             if (!result.Success)
             {
