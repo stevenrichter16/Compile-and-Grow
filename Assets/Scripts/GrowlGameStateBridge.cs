@@ -110,6 +110,44 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "spawn_seed":
                 return TrySpawnSeedBuiltin(args, out result, out errorMessage);
 
+            // ── morph module builtins ──
+            case "morph_create_part":
+                return TryMorphCreatePartBuiltin(args, out result, out errorMessage);
+
+            case "morph_remove_part":
+                return TryMorphRemovePartBuiltin(args, out result, out errorMessage);
+
+            case "morph_attach":
+                return TryMorphAttachBuiltin(args, out result, out errorMessage);
+
+            case "morph_grow_part":
+                return TryMorphGrowPartBuiltin(args, out result, out errorMessage);
+
+            case "morph_shrink_part":
+                return TryMorphShrinkPartBuiltin(args, out result, out errorMessage);
+
+            case "morph_set_symmetry":
+                return TryMorphSetSymmetryBuiltin(args, out result, out errorMessage);
+
+            case "morph_set_growth_pattern":
+                return TryMorphSetGrowthPatternBuiltin(args, out result, out errorMessage);
+
+            case "morph_set_surface":
+                return TryMorphSetSurfaceBuiltin(args, out result, out errorMessage);
+
+            case "morph_emit_light":
+                return TryMorphEmitLightBuiltin(args, out result, out errorMessage);
+
+            // ── parts query builtins ──
+            case "parts_find":
+                return TryPartsFindBuiltin(args, out result, out errorMessage);
+
+            case "parts_find_type":
+                return TryPartsFindTypeBuiltin(args, out result, out errorMessage);
+
+            case "parts_count":
+                return TryPartsCountBuiltin(args, out result, out errorMessage);
+
             default:
                 errorMessage = "Unknown game-state builtin '" + builtinName + "'.";
                 return false;
@@ -420,6 +458,334 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         errorMessage = null;
         return true;
     }
+
+    // ── Morph module builtins ──────────────────────────────────────
+
+    private PlantBody GetOrCreateBody()
+    {
+        return organismEntity.Body;
+    }
+
+    // morph_create_part(name, type, size=1, energy_cost=0.1)
+    private bool TryMorphCreatePartBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "name", out string name, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadString(args, index: 1, name: "type", out string type, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        float size = (float)TryReadNumberOptional(args, index: 2, name: "size", defaultValue: 1d);
+        float energyCost = (float)TryReadNumberOptional(args, index: 3, name: "energy_cost", defaultValue: 0.1d);
+
+        PlantBody body = GetOrCreateBody();
+        PlantPart part = body.CreatePart(name, type, size, energyCost);
+        if (part == null)
+        {
+            errorMessage = "Failed to create part '" + name + "' (may already exist).";
+            result = null;
+            return false;
+        }
+
+        // Apply any additional properties passed via keyword args beyond the positional ones
+        for (int i = 0; i < args.Count; i++)
+        {
+            string argName = args[i].Name;
+            if (string.IsNullOrEmpty(argName)) continue;
+            if (argName == "name" || argName == "type" || argName == "size" || argName == "energy_cost") continue;
+            part.TrySetProperty(argName, args[i].Value);
+        }
+
+        result = part.CreateSnapshot();
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_remove_part(name)
+    private bool TryMorphRemovePartBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "name", out string name, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        bool removed = body.RemovePart(name);
+        result = removed;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_attach(part_name, to_part, position="tip")
+    private bool TryMorphAttachBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadString(args, index: 1, name: "to_part", out string toPartName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        string position = "tip";
+        if (TryGetArg(args, index: 2, name: "position", out RuntimeCallArgument posArg) && posArg.Value != null)
+            position = posArg.Value.ToString();
+
+        PlantBody body = GetOrCreateBody();
+        bool attached = body.AttachPart(partName, toPartName, position);
+        result = attached;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_grow_part(part_name, property, amount)
+    private bool TryMorphGrowPartBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadString(args, index: 1, name: "property", out string property, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadNumber(args, index: 2, name: "amount", out double amount, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        bool grown = body.GrowPart(partName, property, amount);
+        result = grown;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_shrink_part(part_name, property, amount)
+    private bool TryMorphShrinkPartBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadString(args, index: 1, name: "property", out string property, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadNumber(args, index: 2, name: "amount", out double amount, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        bool shrunk = body.ShrinkPart(partName, property, amount);
+        result = shrunk;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_set_symmetry(type)
+    private bool TryMorphSetSymmetryBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "type", out string symType, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        if (!body.TrySetMorphology("symmetry", symType, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        result = symType;
+        return true;
+    }
+
+    // morph_set_growth_pattern(type)
+    private bool TryMorphSetGrowthPatternBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "type", out string patternType, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        if (!body.TrySetMorphology("growth_pattern", patternType, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        result = patternType;
+        return true;
+    }
+
+    // morph_set_surface(part_name, properties_dict)
+    private bool TryMorphSetSurfaceBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryGetArg(args, index: 1, name: "properties", out RuntimeCallArgument propsArg))
+        {
+            result = null;
+            errorMessage = "Expected properties argument.";
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+
+        if (propsArg.Value is IDictionary dict)
+        {
+            body.SetSurface(partName, dict);
+            result = true;
+        }
+        else
+        {
+            // If a single key-value was passed, apply keyword args as surface properties
+            PlantPart part = body.FindPart(partName);
+            if (part == null)
+            {
+                result = false;
+                errorMessage = "Part '" + partName + "' not found.";
+                return false;
+            }
+
+            for (int i = 1; i < args.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(args[i].Name) && args[i].Name != "part_name")
+                    part.TrySetProperty("surface_" + args[i].Name.Trim().ToLowerInvariant(), args[i].Value);
+            }
+
+            result = true;
+        }
+
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_emit_light(intensity, color_r, color_g, color_b, part_name=None)
+    private bool TryMorphEmitLightBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadNumber(args, index: 0, name: "intensity", out double intensity, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        double r = TryReadNumberOptional(args, index: 1, name: "color_r", defaultValue: 255d);
+        double g = TryReadNumberOptional(args, index: 2, name: "color_g", defaultValue: 255d);
+        double b = TryReadNumberOptional(args, index: 3, name: "color_b", defaultValue: 255d);
+
+        string partName = null;
+        if (TryGetArg(args, index: 4, name: "part_name", out RuntimeCallArgument partArg) && partArg.Value != null)
+            partName = partArg.Value.ToString();
+
+        PlantBody body = GetOrCreateBody();
+
+        if (!string.IsNullOrEmpty(partName))
+        {
+            PlantPart part = body.FindPart(partName);
+            if (part != null)
+            {
+                part.TrySetProperty("bioluminescence", intensity);
+                part.TrySetProperty("biolum_color_r", r);
+                part.TrySetProperty("biolum_color_g", g);
+                part.TrySetProperty("biolum_color_b", b);
+            }
+        }
+        else
+        {
+            body.TrySetMorphology("opacity", 1.0, out _);
+        }
+
+        result = intensity;
+        errorMessage = null;
+        return true;
+    }
+
+    // ── Parts query builtins ────────────────────────────────────────
+
+    // parts_find(name) -> part snapshot or null
+    private bool TryPartsFindBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "name", out string name, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        PlantPart part = body.FindPart(name);
+        result = part?.CreateSnapshot();
+        errorMessage = null;
+        return true;
+    }
+
+    // parts_find_type(type) -> list of part snapshots
+    private bool TryPartsFindTypeBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        List<PlantPart> parts = body.FindPartsByType(type);
+        var snapshots = new List<object>(parts.Count);
+        for (int i = 0; i < parts.Count; i++)
+            snapshots.Add(parts[i].CreateSnapshot());
+
+        result = snapshots;
+        errorMessage = null;
+        return true;
+    }
+
+    // parts_count(type) -> long
+    private bool TryPartsCountBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        result = (long)body.CountPartsByType(type);
+        errorMessage = null;
+        return true;
+    }
+
+    // ── World state helpers ─────────────────────────────────────────
 
     private bool TryWorldGet(string key, out object value)
     {
