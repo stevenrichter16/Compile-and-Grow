@@ -37,6 +37,7 @@ namespace GrowlLanguage.Runtime
         public string EntryFunctionName { get; set; } = "main";
         public int MaxLoopIterations { get; set; } = 100000;
         public IGrowlRuntimeHost Host { get; set; }
+        public BiologicalContext BioContext { get; set; }
     }
 
     public sealed class RuntimeResult

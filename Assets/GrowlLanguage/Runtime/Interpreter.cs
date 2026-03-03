@@ -222,6 +222,7 @@ namespace GrowlLanguage.Runtime
     {
         private readonly RuntimeOptions _options;
         private readonly IGrowlRuntimeHost _host;
+        private readonly BiologicalContext _bioContext;
         private readonly List<string> _outputLines;
         private readonly RuntimeEnvironment _globals;
         private RuntimeEnvironment _environment;
@@ -232,6 +233,7 @@ namespace GrowlLanguage.Runtime
         {
             _options = options ?? new RuntimeOptions();
             _host = _options.Host;
+            _bioContext = _options.BioContext;
             _outputLines = outputLines ?? new List<string>();
             _globals = new RuntimeEnvironment(parent: null);
             _environment = _globals;
@@ -710,50 +712,27 @@ namespace GrowlLanguage.Runtime
                     return;
 
                 case PhaseBlock phaseBlock:
-                    if (phaseBlock.Condition == null || IsTruthy(Evaluate(phaseBlock.Condition)))
-                        ExecuteBlock(phaseBlock.Body, new RuntimeEnvironment(_environment));
+                    ExecutePhaseBlock(phaseBlock);
                     return;
 
                 case WhenBlock whenBlock:
-                    if (IsTruthy(Evaluate(whenBlock.Condition)))
-                    {
-                        ExecuteBlock(whenBlock.Body, new RuntimeEnvironment(_environment));
-                        ExecuteBlock(whenBlock.ThenBlock, new RuntimeEnvironment(_environment));
-                    }
+                    ExecuteWhenBlock(whenBlock);
                     return;
 
                 case RespondBlock respondBlock:
-                    {
-                        var respondEnv = new RuntimeEnvironment(_environment);
-                        if (!string.IsNullOrEmpty(respondBlock.Binding))
-                            respondEnv.Define(respondBlock.Binding, null);
-
-                        ExecuteBlock(respondBlock.Body, respondEnv);
-                    }
+                    ExecuteRespondBlock(respondBlock);
                     return;
 
                 case AdaptBlock adapt:
-                    Evaluate(adapt.Subject);
-                    for (int i = 0; i < adapt.Rules.Count; i++)
-                    {
-                        if (IsTruthy(Evaluate(adapt.Rules[i].Condition)))
-                            Evaluate(adapt.Rules[i].Action);
-                    }
-                    Evaluate(adapt.Budget);
+                    ExecuteAdaptBlock(adapt);
                     return;
 
                 case CycleBlock cycle:
-                    Evaluate(cycle.Period);
-                    for (int i = 0; i < cycle.Points.Count; i++)
-                    {
-                        Evaluate(cycle.Points[i].At);
-                        ExecuteBlock(cycle.Points[i].Body, new RuntimeEnvironment(_environment));
-                    }
+                    ExecuteCycleBlock(cycle);
                     return;
 
                 case TickerDecl ticker:
-                    Evaluate(ticker.Interval);
-                    ExecuteBlock(ticker.Body, new RuntimeEnvironment(_environment));
+                    ExecuteTickerDecl(ticker);
                     return;
             }
 
@@ -824,6 +803,247 @@ namespace GrowlLanguage.Runtime
                     return null;
             }
         }
+
+        // ── Biological construct implementations ─────────────────────
+
+        private void ExecutePhaseBlock(PhaseBlock phaseBlock)
+        {
+            if (phaseBlock.Condition != null)
+            {
+                // Conditional phase: execute body only when condition is true
+                if (IsTruthy(Evaluate(phaseBlock.Condition)))
+                    ExecuteBlock(phaseBlock.Body, new RuntimeEnvironment(_environment));
+                return;
+            }
+
+            // Age-range phase: check organism maturity against (MinAge, MaxAge)
+            double minAge = ToDouble(Evaluate(phaseBlock.MinAge));
+            double maxAge = ToDouble(Evaluate(phaseBlock.MaxAge));
+
+            double maturity = 0d;
+            if (_host != null)
+            {
+                var matArgs = new List<RuntimeCallArgument> { new RuntimeCallArgument("key", "maturity") };
+                if (_host.TryInvokeBuiltin("org_get", matArgs, out object matVal, out _) && matVal != null)
+                    ToDouble(matVal, out maturity);
+            }
+
+            if (maturity >= minAge && maturity <= maxAge)
+                ExecuteBlock(phaseBlock.Body, new RuntimeEnvironment(_environment));
+        }
+
+        private void ExecuteWhenBlock(WhenBlock whenBlock)
+        {
+            bool currentTrue = IsTruthy(Evaluate(whenBlock.Condition));
+
+            if (_bioContext == null)
+            {
+                // No bio context — fall back to level detection
+                if (currentTrue)
+                    ExecuteBlock(whenBlock.Body, new RuntimeEnvironment(_environment));
+                return;
+            }
+
+            // Edge detection: use source location as key
+            string key = whenBlock.Line + ":" + whenBlock.Column;
+            _bioContext.WhenPreviousState.TryGetValue(key, out bool previousTrue);
+
+            if (currentTrue && !previousTrue)
+            {
+                // Rising edge — condition just became true
+                ExecuteBlock(whenBlock.Body, new RuntimeEnvironment(_environment));
+            }
+            else if (!currentTrue && previousTrue && whenBlock.ThenBlock != null && whenBlock.ThenBlock.Count > 0)
+            {
+                // Falling edge — condition just became false, fire then block
+                ExecuteBlock(whenBlock.ThenBlock, new RuntimeEnvironment(_environment));
+            }
+
+            _bioContext.WhenPreviousState[key] = currentTrue;
+        }
+
+        private void ExecuteRespondBlock(RespondBlock respondBlock)
+        {
+            if (_bioContext == null)
+                return; // No bio context — cannot dispatch events
+
+            if (!_bioContext.PendingEvents.TryGetValue(respondBlock.EventName, out List<object> events))
+                return; // No events queued for this handler
+
+            if (events.Count == 0)
+                return;
+
+            // Dispatch each queued event
+            for (int i = 0; i < events.Count; i++)
+            {
+                var respondEnv = new RuntimeEnvironment(_environment);
+                if (!string.IsNullOrEmpty(respondBlock.Binding))
+                    respondEnv.Define(respondBlock.Binding, events[i]);
+
+                ExecuteBlock(respondBlock.Body, respondEnv);
+            }
+
+            // Consume events after dispatch
+            events.Clear();
+        }
+
+        private void ExecuteAdaptBlock(AdaptBlock adapt)
+        {
+            // Get current value of the subject
+            object currentObj = Evaluate(adapt.Subject);
+            if (!ToDouble(currentObj, out double currentValue))
+                return;
+
+            // Find target: first matching rule wins
+            double targetValue = currentValue;
+            bool found = false;
+            for (int i = 0; i < adapt.Rules.Count; i++)
+            {
+                GrowlNode condition = adapt.Rules[i].Condition;
+                bool matches;
+
+                // otherwise rule: NoneLiteralExpr or null condition = always true
+                if (condition == null || condition is NoneLiteralExpr)
+                    matches = true;
+                else
+                    matches = IsTruthy(Evaluate(condition));
+
+                if (matches)
+                {
+                    object actionVal = Evaluate(adapt.Rules[i].Action);
+                    if (ToDouble(actionVal, out double tv))
+                        targetValue = tv;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+                return;
+
+            // Get rate (max change per tick)
+            double rate = 1d;
+            if (adapt.Budget != null)
+            {
+                object budgetVal = Evaluate(adapt.Budget);
+                if (ToDouble(budgetVal, out double r))
+                    rate = Math.Abs(r);
+            }
+
+            // Apply rate-limited interpolation
+            double delta = targetValue - currentValue;
+            if (Math.Abs(delta) > rate)
+                delta = delta > 0 ? rate : -rate;
+
+            double newValue = currentValue + delta;
+
+            // Write back to the subject
+            WriteAssignmentTarget(adapt.Subject, newValue, adapt);
+        }
+
+        private void ExecuteCycleBlock(CycleBlock cycle)
+        {
+            if (_bioContext == null)
+            {
+                // No bio context — fall back to running first point
+                if (cycle.Points.Count > 0)
+                    ExecuteBlock(cycle.Points[0].Body, new RuntimeEnvironment(_environment));
+                return;
+            }
+
+            long period = ToLong(Evaluate(cycle.Period));
+            if (period <= 0) period = 1;
+
+            // Initialize cycle start tick if missing
+            if (!_bioContext.CycleStartTicks.TryGetValue(cycle.Name, out long startTick))
+            {
+                startTick = _bioContext.CurrentTick;
+                _bioContext.CycleStartTicks[cycle.Name] = startTick;
+            }
+
+            long position = (_bioContext.CurrentTick - startTick) % period;
+
+            // Find the active point: last point whose At value <= current position
+            int activeIndex = -1;
+            for (int i = 0; i < cycle.Points.Count; i++)
+            {
+                long atValue = ToLong(Evaluate(cycle.Points[i].At));
+                if (atValue <= position)
+                    activeIndex = i;
+            }
+
+            if (activeIndex >= 0)
+                ExecuteBlock(cycle.Points[activeIndex].Body, new RuntimeEnvironment(_environment));
+        }
+
+        private void ExecuteTickerDecl(TickerDecl ticker)
+        {
+            long interval = ToLong(Evaluate(ticker.Interval));
+            if (interval <= 0) interval = 1;
+
+            if (_bioContext == null)
+            {
+                // No bio context — fall back to always executing
+                ExecuteBlock(ticker.Body, new RuntimeEnvironment(_environment));
+                return;
+            }
+
+            _bioContext.TickerLastFired.TryGetValue(ticker.Name, out long lastFired);
+
+            if (_bioContext.CurrentTick - lastFired >= interval)
+            {
+                // Deduct 0.5 energy cost
+                if (_host != null)
+                {
+                    var costArgs = new List<RuntimeCallArgument>
+                    {
+                        new RuntimeCallArgument("key", "energy"),
+                        new RuntimeCallArgument("delta", -0.5),
+                    };
+                    _host.TryInvokeBuiltin("org_add", costArgs, out _, out _);
+                }
+
+                ExecuteBlock(ticker.Body, new RuntimeEnvironment(_environment));
+                _bioContext.TickerLastFired[ticker.Name] = _bioContext.CurrentTick;
+            }
+        }
+
+        // Numeric conversion helpers for biological constructs
+        private static double ToDouble(object value)
+        {
+            ToDouble(value, out double d);
+            return d;
+        }
+
+        private static bool ToDouble(object value, out double number)
+        {
+            switch (value)
+            {
+                case sbyte v: number = v; return true;
+                case byte v: number = v; return true;
+                case short v: number = v; return true;
+                case ushort v: number = v; return true;
+                case int v: number = v; return true;
+                case uint v: number = v; return true;
+                case long v: number = v; return true;
+                case ulong v: number = v; return true;
+                case float v: number = v; return true;
+                case double v: number = v; return true;
+                case decimal v: number = (double)v; return true;
+                default:
+                    number = 0d;
+                    return false;
+            }
+        }
+
+        private static long ToLong(object value)
+        {
+            if (ToDouble(value, out double d))
+                return (long)Math.Round(d);
+            return 0L;
+        }
+
+        // ── Assignment helpers ──────────────────────────────────────────
 
         private void WriteAssignmentTarget(GrowlNode target, object value, GrowlNode site)
         {

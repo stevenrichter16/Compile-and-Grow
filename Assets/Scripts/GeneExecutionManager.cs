@@ -62,12 +62,29 @@ public sealed class GeneExecutionManager : MonoBehaviour
 
             _bridge.SetOrganism(org);
 
+            // Retrieve or create persistent biological context for this organism
+            // and pass it to the bridge for event queueing
+            BiologicalContext bioContext;
+            const string bioContextKey = "_bio_context";
+            if (org.TryGetMemoryValue(bioContextKey, out object existing) && existing is BiologicalContext ctx)
+            {
+                bioContext = ctx;
+            }
+            else
+            {
+                bioContext = new BiologicalContext();
+                org.SetMemoryValue(bioContextKey, bioContext);
+            }
+            bioContext.CurrentTick = tick;
+            _bridge.SetBioContext(bioContext);
+
             RuntimeResult result = GrowlRuntime.Execute(org.GrowlSource, new RuntimeOptions
             {
                 AutoInvokeEntryFunction = true,
                 EntryFunctionName = _entryFunctionName,
                 MaxLoopIterations = _maxLoopIterations,
                 Host = _bridge,
+                BioContext = bioContext,
             });
 
             for (int j = 0; j < result.OutputLines.Count; j++)

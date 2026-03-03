@@ -18,6 +18,7 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     private StateBackedDictionary _worldProxy;
     private StateBackedDictionary _orgProxy;
     private StateBackedDictionary _seedProxy;
+    private GrowlLanguage.Runtime.BiologicalContext _bioContext;
 
     private void Awake()
     {
@@ -28,6 +29,11 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     public void SetOrganism(OrganismEntity target)
     {
         organismEntity = target;
+    }
+
+    public void SetBioContext(GrowlLanguage.Runtime.BiologicalContext context)
+    {
+        _bioContext = context;
     }
 
     public void PopulateGlobals(IDictionary<string, object> globals)
@@ -560,6 +566,20 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         double radius = TryReadNumberOptional(args, index: 2, name: "radius", defaultValue: 1d);
 
         result = growthTickManager.EmitSignal(signalType, intensity, radius, organismEntity.OrganismName);
+
+        // Also queue for local respond-to blocks
+        if (_bioContext != null)
+        {
+            var eventData = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["type"] = signalType,
+                ["intensity"] = intensity,
+                ["radius"] = radius,
+                ["source"] = organismEntity.OrganismName,
+            };
+            _bioContext.QueueEvent(signalType, eventData);
+        }
+
         errorMessage = null;
         return true;
     }
