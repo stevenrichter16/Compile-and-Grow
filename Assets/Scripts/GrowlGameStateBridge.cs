@@ -18,6 +18,7 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     private StateBackedDictionary _worldProxy;
     private StateBackedDictionary _orgProxy;
     private StateBackedDictionary _seedProxy;
+    private EnvironmentProxy _envProxy;
     private GrowlLanguage.Runtime.BiologicalContext _bioContext;
 
     private void Awake()
@@ -34,6 +35,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     public void SetBioContext(GrowlLanguage.Runtime.BiologicalContext context)
     {
         _bioContext = context;
+        if (_envProxy != null)
+            _envProxy.SetBioContext(context);
     }
 
     public void PopulateGlobals(IDictionary<string, object> globals)
@@ -50,7 +53,7 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         globals["world"] = _worldProxy;
         globals["org"] = _orgProxy;
         globals["seed"] = _seedProxy;
-        globals["env"] = _worldProxy;
+        globals["env"] = _envProxy;
     }
 
     public bool TryInvokeBuiltin(
@@ -2087,6 +2090,13 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 BuildSeedSnapshot,
                 GetSeedProxyValue,
                 SetSeedProxyValue);
+        }
+
+        if (_envProxy == null)
+        {
+            _envProxy = new EnvironmentProxy(resourceGrid);
+            if (_bioContext != null)
+                _envProxy.SetBioContext(_bioContext);
         }
     }
 

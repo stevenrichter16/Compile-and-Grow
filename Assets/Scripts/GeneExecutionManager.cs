@@ -90,10 +90,23 @@ public sealed class GeneExecutionManager : MonoBehaviour
             for (int j = 0; j < result.OutputLines.Count; j++)
                 Debug.Log($"[{org.OrganismName}] {result.OutputLines[j]}", org);
 
+            // Deduct memory maintenance cost: 0.1 energy per non-internal key per tick
+            int memoryKeys = 0;
+            foreach (string key in org.Memory.Keys)
+            {
+                if (!key.StartsWith("_"))
+                    memoryKeys++;
+            }
+            if (memoryKeys > 0)
+                org.TryAddState("energy", -0.1 * memoryKeys, out _, out _);
+
             if (!result.Success)
             {
                 for (int m = 0; m < result.Messages.Count; m++)
+                {
                     Debug.LogWarning($"[GeneExec] {org.OrganismName}: {result.Messages[m]}", org);
+                    ErrorMutationClassifier.ApplyMutation(org, result.Messages[m]);
+                }
             }
         }
     }

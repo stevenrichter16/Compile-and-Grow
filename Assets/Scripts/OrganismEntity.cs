@@ -25,6 +25,7 @@ public sealed class OrganismEntity : MonoBehaviour
     private readonly Dictionary<string, object> _memory = new Dictionary<string, object>(StringComparer.Ordinal);
 
     private PlantBody _plantBody;
+    private NutrientStore _nutrients;
 
     public string OrganismName => organismName;
     public bool IsAlive => alive;
@@ -39,6 +40,16 @@ public sealed class OrganismEntity : MonoBehaviour
             if (_plantBody == null)
                 _plantBody = gameObject.AddComponent<PlantBody>();
             return _plantBody;
+        }
+    }
+
+    public NutrientStore Nutrients
+    {
+        get
+        {
+            if (_nutrients == null)
+                _nutrients = new NutrientStore();
+            return _nutrients;
         }
     }
 
@@ -84,6 +95,9 @@ public sealed class OrganismEntity : MonoBehaviour
                 return true;
             case "morphology":
                 value = new MorphologyProxy(Body);
+                return true;
+            case "nutrients":
+                value = Nutrients;
                 return true;
         }
 
@@ -150,6 +164,10 @@ public sealed class OrganismEntity : MonoBehaviour
 
             case "morphology":
                 errorMessage = "org.morphology is read-only as a container; set values via org.morphology[key] or morph builtins.";
+                return false;
+
+            case "nutrients":
+                errorMessage = "org.nutrients is read-only as a container; set nutrient levels via org.nutrients[key].";
                 return false;
         }
 
@@ -279,6 +297,7 @@ public sealed class OrganismEntity : MonoBehaviour
             ["memory"] = _memory,
             ["parts"] = Body.CreatePartsProxy(),
             ["morphology"] = new MorphologyProxy(Body),
+            ["nutrients"] = Nutrients,
         };
 
         foreach (KeyValuePair<string, object> pair in _customState)
