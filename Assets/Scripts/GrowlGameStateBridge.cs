@@ -144,6 +144,18 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "morph_emit_light":
                 return TryMorphEmitLightBuiltin(args, out result, out errorMessage);
 
+            case "morph_orient_toward":
+                return TryMorphOrientTowardBuiltin(args, out result, out errorMessage);
+
+            case "morph_contract":
+                return TryMorphContractBuiltin(args, out result, out errorMessage);
+
+            case "morph_expand":
+                return TryMorphExpandBuiltin(args, out result, out errorMessage);
+
+            case "morph_pulse":
+                return TryMorphPulseBuiltin(args, out result, out errorMessage);
+
             // ── parts query builtins ──
             case "parts_find":
                 return TryPartsFindBuiltin(args, out result, out errorMessage);
@@ -865,6 +877,158 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         }
 
         result = intensity;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_orient_toward(direction)
+    // Slowly orient the organism toward a direction. Stores orientation as morphology state.
+    private bool TryMorphOrientTowardBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "direction", out string direction, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        string normalized = direction.Trim().ToLowerInvariant();
+
+        PlantBody body = GetOrCreateBody();
+        body.TrySetMorphology("orientation", normalized, out _);
+
+        result = normalized;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_contract(part_name, amount)
+    // Contract a body part. Requires non-rigid material. Think: Venus flytrap closing, tendril coiling.
+    private bool TryMorphContractBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadNumber(args, index: 1, name: "amount", out double amount, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        PlantPart part = body.FindPart(partName);
+        if (part == null)
+        {
+            result = false;
+            errorMessage = null;
+            return true;
+        }
+
+        // Get current contraction state (0 = relaxed, 1 = fully contracted)
+        double current = 0d;
+        if (part.TryGetProperty("contraction", out object curVal))
+            TryConvertToDouble(curVal, out current);
+
+        double newVal = Math.Min(1.0, current + Math.Abs(amount));
+        part.TrySetProperty("contraction", newVal);
+
+        // Shrink size proportionally
+        body.ShrinkPart(partName, "size", Math.Abs(amount) * part.Size * 0.1);
+
+        result = newVal;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_expand(part_name, amount)
+    // Expand a body part. Opposite of contract.
+    private bool TryMorphExpandBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadNumber(args, index: 1, name: "amount", out double amount, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        PlantPart part = body.FindPart(partName);
+        if (part == null)
+        {
+            result = false;
+            errorMessage = null;
+            return true;
+        }
+
+        // Reduce contraction state toward 0 (relaxed)
+        double current = 0d;
+        if (part.TryGetProperty("contraction", out object curVal))
+            TryConvertToDouble(curVal, out current);
+
+        double newVal = Math.Max(0.0, current - Math.Abs(amount));
+        part.TrySetProperty("contraction", newVal);
+
+        // Grow size proportionally
+        body.GrowPart(partName, "size", Math.Abs(amount) * part.Size * 0.1);
+
+        result = newVal;
+        errorMessage = null;
+        return true;
+    }
+
+    // morph_pulse(part_name, frequency, amplitude)
+    // Rhythmic contraction/expansion cycle. Stores pulse params on part for tick-based evaluation.
+    private bool TryMorphPulseBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadNumber(args, index: 1, name: "frequency", out double frequency, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        if (!TryReadNumber(args, index: 2, name: "amplitude", out double amplitude, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        PlantBody body = GetOrCreateBody();
+        PlantPart part = body.FindPart(partName);
+        if (part == null)
+        {
+            result = false;
+            errorMessage = null;
+            return true;
+        }
+
+        // Store pulse parameters on the part
+        part.TrySetProperty("pulse_frequency", Math.Max(0.0, frequency));
+        part.TrySetProperty("pulse_amplitude", Math.Clamp(amplitude, 0.0, 1.0));
+        part.TrySetProperty("pulse_active", true);
+
+        // Calculate current pulse value based on tick (sinusoidal)
+        long currentTick = _bioContext?.CurrentTick ?? 0L;
+        double phase = (currentTick * frequency * 2.0 * Math.PI) / 10.0;
+        double pulseValue = Math.Sin(phase) * amplitude;
+
+        // Apply as contraction (positive = contract, negative = expand)
+        double contraction = (pulseValue + 1.0) * 0.5 * amplitude; // normalize to [0, amplitude]
+        part.TrySetProperty("contraction", contraction);
+
+        result = pulseValue;
         errorMessage = null;
         return true;
     }

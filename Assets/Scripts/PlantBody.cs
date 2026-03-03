@@ -26,6 +26,7 @@ public sealed class PlantBody : MonoBehaviour
     [SerializeField] private float colorR;
     [SerializeField] private float colorG = 0.5f;
     [SerializeField] private float colorB;
+    [SerializeField] private string orientation = "up";
 
     // ── Parts registry ──────────────────────────────────────────────
     private readonly List<PlantPart> _parts = new List<PlantPart>();
@@ -211,6 +212,9 @@ public sealed class PlantBody : MonoBehaviour
             case "center_of_mass":
                 value = new List<object> { 0.0, (double)(height * 0.4f), 0.0 };
                 return true;
+            case "orientation":
+                value = orientation;
+                return true;
         }
 
         value = null;
@@ -276,6 +280,9 @@ public sealed class PlantBody : MonoBehaviour
             case "color_b":
                 colorB = Clamp01(ToFloat(value));
                 return true;
+            case "orientation":
+                orientation = value?.ToString() ?? "up";
+                return true;
         }
 
         errorMessage = "Unknown morphology key '" + key + "'.";
@@ -298,6 +305,7 @@ public sealed class PlantBody : MonoBehaviour
             ["opacity"] = (double)opacity,
             ["color"] = new List<object> { (double)colorR, (double)colorG, (double)colorB },
             ["center_of_mass"] = new List<object> { 0.0, (double)(height * 0.4f), 0.0 },
+            ["orientation"] = orientation,
         };
     }
 
