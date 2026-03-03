@@ -227,6 +227,44 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "photo_share_energy":
                 return TryPhotoBuiltin(builtinName, args, out result, out errorMessage);
 
+            // ── defense module builtins ──
+            case "defense_grow_thorns":
+            case "defense_grow_armor":
+            case "defense_grow_camouflage":
+            case "defense_produce_toxin":
+            case "defense_produce_repellent":
+            case "defense_produce_attractant":
+            case "defense_sticky_trap":
+            case "defense_resist_disease":
+            case "defense_quarantine_part":
+            case "defense_fever":
+            case "defense_on_damage":
+            case "defense_on_neighbor_distress":
+                return TryDefenseBuiltin(builtinName, args, out result, out errorMessage);
+
+            // ── reproduce module builtins ──
+            case "reproduce_generate_seeds":
+            case "reproduce_set_dispersal":
+            case "reproduce_set_germination":
+            case "reproduce_mutate":
+            case "reproduce_mutate_gene":
+            case "reproduce_crossbreed":
+            case "reproduce_clone":
+            case "reproduce_fragment":
+            case "reproduce_set_lifecycle":
+            case "reproduce_set_maturity_age":
+                return TryReproduceBuiltin(builtinName, args, out result, out errorMessage);
+
+            // ── synthesize module builtins ──
+            case "synthesize":
+            case "product_enrich":
+            case "product_fortify":
+            case "product_set_coating":
+            case "product_set_form":
+            case "produce":
+            case "emit":
+                return TrySynthesizeBuiltin(builtinName, args, out result, out errorMessage);
+
             default:
                 errorMessage = "Unknown game-state builtin '" + builtinName + "'.";
                 return false;
@@ -1381,6 +1419,316 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             default:
                 result = null;
                 errorMessage = "Unknown photo builtin '" + name + "'.";
+                return false;
+        }
+    }
+
+    // ── Defense module dispatch ───────────────────────────────────
+
+    private bool TryDefenseBuiltin(string name, IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        PlantBody body = GetOrCreateBody();
+        errorMessage = null;
+
+        switch (name)
+        {
+            case "defense_grow_thorns":
+            {
+                string partName = null;
+                if (TryGetArg(args, index: 0, name: "part_name", out RuntimeCallArgument pArg) && pArg.Value != null)
+                    partName = pArg.Value.ToString();
+                float sharpness = (float)TryReadNumberOptional(args, index: 1, name: "sharpness", defaultValue: 0.5);
+                float density = (float)TryReadNumberOptional(args, index: 2, name: "density", defaultValue: 0.5);
+                result = DefenseModule.GrowThorns(body, organismEntity, partName, sharpness, density);
+                return true;
+            }
+            case "defense_grow_armor":
+            {
+                if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+                { result = null; return false; }
+                float thickness = (float)TryReadNumberOptional(args, index: 1, name: "thickness", defaultValue: 0.5);
+                result = DefenseModule.GrowArmor(body, organismEntity, partName, thickness);
+                return true;
+            }
+            case "defense_grow_camouflage":
+            {
+                string envType = null;
+                if (TryGetArg(args, index: 0, name: "environment_type", out RuntimeCallArgument eArg) && eArg.Value != null)
+                    envType = eArg.Value.ToString();
+                result = DefenseModule.GrowCamouflage(body, organismEntity, envType);
+                return true;
+            }
+            case "defense_produce_toxin":
+            {
+                if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+                { result = null; return false; }
+                float potency = (float)TryReadNumberOptional(args, index: 1, name: "potency", defaultValue: 0.5);
+                string location = "all";
+                if (TryGetArg(args, index: 2, name: "location", out RuntimeCallArgument lArg) && lArg.Value != null)
+                    location = lArg.Value.ToString();
+                result = DefenseModule.ProduceToxin(body, organismEntity, type, potency, location);
+                return true;
+            }
+            case "defense_produce_repellent":
+            {
+                if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+                { result = null; return false; }
+                int radius = (int)TryReadIntegerOptional(args, index: 1, name: "radius", defaultValue: 2L);
+                result = DefenseModule.ProduceRepellent(body, organismEntity, resourceGrid, type, radius);
+                return true;
+            }
+            case "defense_produce_attractant":
+            {
+                if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+                { result = null; return false; }
+                if (!TryReadString(args, index: 1, name: "target", out string target, out errorMessage))
+                { result = null; return false; }
+                int radius = (int)TryReadIntegerOptional(args, index: 2, name: "radius", defaultValue: 3L);
+                result = DefenseModule.ProduceAttractant(body, organismEntity, resourceGrid, type, target, radius);
+                return true;
+            }
+            case "defense_sticky_trap":
+            {
+                if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+                { result = null; return false; }
+                float strength = (float)TryReadNumberOptional(args, index: 1, name: "strength", defaultValue: 0.5);
+                result = DefenseModule.StickyTrap(body, organismEntity, partName, strength);
+                return true;
+            }
+            case "defense_resist_disease":
+            {
+                if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+                { result = null; return false; }
+                float strength = (float)TryReadNumberOptional(args, index: 1, name: "strength", defaultValue: 0.5);
+                result = DefenseModule.ResistDisease(body, organismEntity, type, strength);
+                return true;
+            }
+            case "defense_quarantine_part":
+            {
+                if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+                { result = null; return false; }
+                result = DefenseModule.QuarantinePart(body, partName);
+                return true;
+            }
+            case "defense_fever":
+            {
+                float amount = (float)TryReadNumberOptional(args, index: 0, name: "amount", defaultValue: 1d);
+                result = DefenseModule.Fever(organismEntity, amount);
+                return true;
+            }
+            case "defense_on_damage":
+            {
+                if (!TryGetArg(args, index: 0, name: "callback", out RuntimeCallArgument cbArg))
+                { result = null; errorMessage = "Expected callback argument."; return false; }
+                result = DefenseModule.OnDamage(organismEntity, cbArg.Value);
+                return true;
+            }
+            case "defense_on_neighbor_distress":
+            {
+                if (!TryGetArg(args, index: 0, name: "callback", out RuntimeCallArgument cbArg))
+                { result = null; errorMessage = "Expected callback argument."; return false; }
+                result = DefenseModule.OnNeighborDistress(organismEntity, cbArg.Value);
+                return true;
+            }
+            default:
+                result = null;
+                errorMessage = "Unknown defense builtin '" + name + "'.";
+                return false;
+        }
+    }
+
+    // ── Reproduce module dispatch ──────────────────────────────────
+
+    private bool TryReproduceBuiltin(string name, IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        PlantBody body = GetOrCreateBody();
+        errorMessage = null;
+
+        switch (name)
+        {
+            case "reproduce_generate_seeds":
+            {
+                int count = (int)TryReadIntegerOptional(args, index: 0, name: "count", defaultValue: 1L);
+                float energyPerSeed = (float)TryReadNumberOptional(args, index: 1, name: "energy_per_seed", defaultValue: 2d);
+                result = ReproduceModule.GenerateSeeds(organismEntity, seedInventory, count, energyPerSeed);
+                return true;
+            }
+            case "reproduce_set_dispersal":
+            {
+                if (!TryReadString(args, index: 0, name: "method", out string method, out errorMessage))
+                { result = null; return false; }
+                object dispersalParams = null;
+                if (TryGetArg(args, index: 1, name: "params", out RuntimeCallArgument pArg))
+                    dispersalParams = pArg.Value;
+                result = ReproduceModule.SetDispersal(organismEntity, method, dispersalParams);
+                return true;
+            }
+            case "reproduce_set_germination":
+            {
+                if (!TryGetArg(args, index: 0, name: "conditions", out RuntimeCallArgument cArg))
+                { result = null; errorMessage = "Expected conditions argument."; return false; }
+                result = ReproduceModule.SetGermination(organismEntity, cArg.Value);
+                return true;
+            }
+            case "reproduce_mutate":
+            {
+                float variance = (float)TryReadNumberOptional(args, index: 0, name: "variance", defaultValue: 0.1);
+                result = ReproduceModule.Mutate(organismEntity, variance);
+                return true;
+            }
+            case "reproduce_mutate_gene":
+            {
+                if (!TryReadString(args, index: 0, name: "slot_name", out string slotName, out errorMessage))
+                { result = null; return false; }
+                float variance = (float)TryReadNumberOptional(args, index: 1, name: "variance", defaultValue: 0.1);
+                result = ReproduceModule.MutateGene(organismEntity, slotName, variance);
+                return true;
+            }
+            case "reproduce_crossbreed":
+            {
+                string otherOrg = null;
+                if (TryGetArg(args, index: 0, name: "other_org", out RuntimeCallArgument oArg) && oArg.Value != null)
+                    otherOrg = oArg.Value.ToString();
+                result = ReproduceModule.Crossbreed(organismEntity, otherOrg);
+                return true;
+            }
+            case "reproduce_clone":
+            {
+                string direction = null;
+                if (TryGetArg(args, index: 0, name: "direction", out RuntimeCallArgument dArg) && dArg.Value != null)
+                    direction = dArg.Value.ToString();
+                result = ReproduceModule.Clone(organismEntity, direction);
+                return true;
+            }
+            case "reproduce_fragment":
+            {
+                if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
+                { result = null; return false; }
+                result = ReproduceModule.Fragment(body, organismEntity, partName);
+                return true;
+            }
+            case "reproduce_set_lifecycle":
+            {
+                if (!TryReadString(args, index: 0, name: "type", out string type, out errorMessage))
+                { result = null; return false; }
+                result = ReproduceModule.SetLifecycle(organismEntity, type);
+                return true;
+            }
+            case "reproduce_set_maturity_age":
+            {
+                int ticks = (int)TryReadIntegerOptional(args, index: 0, name: "ticks", defaultValue: 50L);
+                result = ReproduceModule.SetMaturityAge(organismEntity, ticks);
+                return true;
+            }
+            default:
+                result = null;
+                errorMessage = "Unknown reproduce builtin '" + name + "'.";
+                return false;
+        }
+    }
+
+    // ── Synthesize module dispatch ─────────────────────────────────
+
+    private bool TrySynthesizeBuiltin(string name, IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        PlantBody body = GetOrCreateBody();
+        errorMessage = null;
+
+        switch (name)
+        {
+            case "synthesize":
+            {
+                if (!TryReadString(args, index: 0, name: "base", out string baseName, out errorMessage))
+                { result = null; return false; }
+                float density = (float)TryReadNumberOptional(args, index: 1, name: "density", defaultValue: 0.5);
+                float waterContent = (float)TryReadNumberOptional(args, index: 2, name: "water_content", defaultValue: 0.3);
+                float growthRate = (float)TryReadNumberOptional(args, index: 3, name: "growth_rate", defaultValue: 0.5);
+
+                // Collect remaining kwargs
+                var kwargs = new Dictionary<string, object>(StringComparer.Ordinal);
+                for (int i = 0; i < args.Count; i++)
+                {
+                    string argName = args[i].Name;
+                    if (!string.IsNullOrEmpty(argName) &&
+                        argName != "base" && argName != "density" &&
+                        argName != "water_content" && argName != "growth_rate")
+                    {
+                        kwargs[argName] = args[i].Value;
+                    }
+                }
+
+                result = SynthesizeModule.Synthesize(organismEntity, baseName, density, waterContent, growthRate,
+                    kwargs.Count > 0 ? kwargs : null);
+                return true;
+            }
+            case "product_enrich":
+            {
+                if (!TryGetArg(args, index: 0, name: "product", out RuntimeCallArgument prodArg) ||
+                    !(prodArg.Value is Dictionary<string, object> product))
+                { result = null; errorMessage = "Expected product argument."; return false; }
+                if (!TryReadString(args, index: 1, name: "nutrient", out string nutrient, out errorMessage))
+                { result = null; return false; }
+                float amount = (float)TryReadNumberOptional(args, index: 2, name: "amount", defaultValue: 0.5);
+                result = SynthesizeModule.ProductEnrich(organismEntity, product, nutrient, amount);
+                return true;
+            }
+            case "product_fortify":
+            {
+                if (!TryGetArg(args, index: 0, name: "product", out RuntimeCallArgument prodArg) ||
+                    !(prodArg.Value is Dictionary<string, object> product))
+                { result = null; errorMessage = "Expected product argument."; return false; }
+                if (!TryReadString(args, index: 1, name: "property", out string property, out errorMessage))
+                { result = null; return false; }
+                object value = null;
+                if (TryGetArg(args, index: 2, name: "value", out RuntimeCallArgument vArg))
+                    value = vArg.Value;
+                result = SynthesizeModule.ProductFortify(product, property, value);
+                return true;
+            }
+            case "product_set_coating":
+            {
+                if (!TryGetArg(args, index: 0, name: "product", out RuntimeCallArgument prodArg) ||
+                    !(prodArg.Value is Dictionary<string, object> product))
+                { result = null; errorMessage = "Expected product argument."; return false; }
+                if (!TryReadString(args, index: 1, name: "type", out string type, out errorMessage))
+                { result = null; return false; }
+                result = SynthesizeModule.ProductSetCoating(product, type);
+                return true;
+            }
+            case "product_set_form":
+            {
+                if (!TryGetArg(args, index: 0, name: "product", out RuntimeCallArgument prodArg) ||
+                    !(prodArg.Value is Dictionary<string, object> product))
+                { result = null; errorMessage = "Expected product argument."; return false; }
+                if (!TryReadString(args, index: 1, name: "shape", out string shape, out errorMessage))
+                { result = null; return false; }
+                result = SynthesizeModule.ProductSetForm(product, shape);
+                return true;
+            }
+            case "produce":
+            {
+                if (!TryGetArg(args, index: 0, name: "product", out RuntimeCallArgument prodArg) ||
+                    !(prodArg.Value is Dictionary<string, object> product))
+                { result = null; errorMessage = "Expected product argument."; return false; }
+                string location = "tips";
+                if (TryGetArg(args, index: 1, name: "location", out RuntimeCallArgument lArg) && lArg.Value != null)
+                    location = lArg.Value.ToString();
+                float rate = (float)TryReadNumberOptional(args, index: 2, name: "rate", defaultValue: 0d);
+                result = SynthesizeModule.Produce(body, organismEntity, product, location, rate);
+                return true;
+            }
+            case "emit":
+            {
+                if (!TryGetArg(args, index: 0, name: "product", out RuntimeCallArgument prodArg) ||
+                    !(prodArg.Value is Dictionary<string, object> product))
+                { result = null; errorMessage = "Expected product argument."; return false; }
+                float rate = (float)TryReadNumberOptional(args, index: 1, name: "rate", defaultValue: 0d);
+                result = SynthesizeModule.Emit(organismEntity, resourceGrid, product, rate);
+                return true;
+            }
+            default:
+                result = null;
+                errorMessage = "Unknown synthesize builtin '" + name + "'.";
                 return false;
         }
     }
