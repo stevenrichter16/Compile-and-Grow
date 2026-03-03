@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -23,9 +24,23 @@ public sealed class OrganismEntity : MonoBehaviour
     private readonly Dictionary<string, object> _customState = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, object> _memory = new Dictionary<string, object>(StringComparer.Ordinal);
 
+    private PlantBody _plantBody;
+
     public string OrganismName => organismName;
     public bool IsAlive => alive;
     public IDictionary<string, object> Memory => _memory;
+
+    public PlantBody Body
+    {
+        get
+        {
+            if (_plantBody == null)
+                _plantBody = GetComponent<PlantBody>();
+            if (_plantBody == null)
+                _plantBody = gameObject.AddComponent<PlantBody>();
+            return _plantBody;
+        }
+    }
 
     public string GrowlSource
     {
@@ -63,6 +78,12 @@ public sealed class OrganismEntity : MonoBehaviour
                 return true;
             case "memory":
                 value = _memory;
+                return true;
+            case "parts":
+                value = Body.CreatePartsProxy();
+                return true;
+            case "morphology":
+                value = new MorphologyProxy(Body);
                 return true;
         }
 
@@ -121,6 +142,14 @@ public sealed class OrganismEntity : MonoBehaviour
 
             case "memory":
                 errorMessage = "org.memory is read-only as a container; set memory entries via org.memory[...] or org_memory_set.";
+                return false;
+
+            case "parts":
+                errorMessage = "org.parts is read-only; use morph builtins to create/modify parts.";
+                return false;
+
+            case "morphology":
+                errorMessage = "org.morphology is read-only as a container; set values via org.morphology[key] or morph builtins.";
                 return false;
         }
 
@@ -248,6 +277,8 @@ public sealed class OrganismEntity : MonoBehaviour
             ["health"] = health,
             ["stress"] = stress,
             ["memory"] = _memory,
+            ["parts"] = Body.CreatePartsProxy(),
+            ["morphology"] = new MorphologyProxy(Body),
         };
 
         foreach (KeyValuePair<string, object> pair in _customState)
@@ -308,5 +339,64 @@ public sealed class OrganismEntity : MonoBehaviour
     private static bool IsWhole(double value)
     {
         return Math.Abs(value - Math.Round(value)) < 0.0000001d;
+    }
+
+    /// <summary>
+    /// Proxy object exposed as org.morphology in Growl runtime.
+    /// Implements IDictionary so the runtime treats it like other state proxies.
+    /// Reads/writes go through to the PlantBody morphology state.
+    /// </summary>
+    public sealed class MorphologyProxy : System.Collections.IDictionary
+    {
+        private readonly PlantBody _body;
+
+        public MorphologyProxy(PlantBody body) { _body = body; }
+
+        public PlantBody Body => _body;
+
+        public object this[object key]
+        {
+            get
+            {
+                string k = key?.ToString() ?? "";
+                _body.TryGetMorphology(k, out object value);
+                return value;
+            }
+            set
+            {
+                string k = key?.ToString() ?? "";
+                _body.TrySetMorphology(k, value, out _);
+            }
+        }
+
+        public ICollection Keys => _body.CreateMorphologySnapshot().Keys;
+        public ICollection Values => _body.CreateMorphologySnapshot().Values;
+        public bool IsReadOnly => false;
+        public bool IsFixedSize => false;
+        public int Count => _body.CreateMorphologySnapshot().Count;
+        public object SyncRoot => this;
+        public bool IsSynchronized => false;
+
+        public void Add(object key, object value) { this[key] = value; }
+        public void Clear() { }
+        public void Remove(object key) { }
+
+        public bool Contains(object key)
+        {
+            string k = key?.ToString() ?? "";
+            return _body.TryGetMorphology(k, out _);
+        }
+
+        public IDictionaryEnumerator GetEnumerator()
+        {
+            return ((System.Collections.IDictionary)_body.CreateMorphologySnapshot()).GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public void CopyTo(Array array, int index)
+        {
+            ((System.Collections.IDictionary)_body.CreateMorphologySnapshot()).CopyTo(array, index);
+        }
     }
 }
