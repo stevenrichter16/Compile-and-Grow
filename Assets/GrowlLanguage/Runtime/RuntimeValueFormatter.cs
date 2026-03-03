@@ -17,11 +17,20 @@ namespace GrowlLanguage.Runtime
 
     public sealed class GrowlSet
     {
-        public IReadOnlyList<object> Elements { get; }
+        internal List<object> MutableElements { get; }
+        public IReadOnlyList<object> Elements => MutableElements;
 
         public GrowlSet(IReadOnlyList<object> elements)
         {
-            Elements = elements ?? new List<object>();
+            if (elements is List<object> existing)
+                MutableElements = existing;
+            else
+            {
+                MutableElements = new List<object>(elements?.Count ?? 0);
+                if (elements != null)
+                    for (int i = 0; i < elements.Count; i++)
+                        MutableElements.Add(elements[i]);
+            }
         }
     }
 

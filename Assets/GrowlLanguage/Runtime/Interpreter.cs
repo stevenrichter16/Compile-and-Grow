@@ -224,6 +224,7 @@ namespace GrowlLanguage.Runtime
         private readonly IGrowlRuntimeHost _host;
         private readonly BiologicalContext _bioContext;
         private readonly List<string> _outputLines;
+        internal List<string> OutputLines => _outputLines;
         private readonly RuntimeEnvironment _globals;
         private RuntimeEnvironment _environment;
         private object _lastValue;
@@ -365,6 +366,14 @@ namespace GrowlLanguage.Runtime
             RegisterHostBuiltin("seed_add");
             RegisterHostBuiltin("emit_signal");
             RegisterHostBuiltin("spawn_seed");
+
+            _globals.Define("warn", new RuntimeBuiltinFunction("warn", BuiltinWarn));
+            _globals.Define("error", new RuntimeBuiltinFunction("error", BuiltinError));
+
+            GrowlMathBuiltins.Register(_globals);
+            GrowlRandomBuiltins.Register(_globals);
+            GrowlBioBuiltins.Register(_globals, _bioContext);
+            GrowlConstants.Register(_globals, _bioContext);
         }
 
         private void RegisterHostBuiltin(string name)
@@ -418,6 +427,30 @@ namespace GrowlLanguage.Runtime
             }
 
             _outputLines.Add(string.Join(" ", parts));
+            return null;
+        }
+
+        private object BuiltinWarn(Interpreter _, List<RuntimeArgument> args, GrowlNode __)
+        {
+            var parts = new List<string>(args.Count);
+            for (int i = 0; i < args.Count; i++)
+            {
+                object value = args[i].Value;
+                parts.Add(value is string s ? s : RuntimeValueFormatter.Format(value));
+            }
+            _outputLines.Add("[WARN] " + string.Join(" ", parts));
+            return null;
+        }
+
+        private object BuiltinError(Interpreter _, List<RuntimeArgument> args, GrowlNode __)
+        {
+            var parts = new List<string>(args.Count);
+            for (int i = 0; i < args.Count; i++)
+            {
+                object value = args[i].Value;
+                parts.Add(value is string s ? s : RuntimeValueFormatter.Format(value));
+            }
+            _outputLines.Add("[ERROR] " + string.Join(" ", parts));
             return null;
         }
 
@@ -1460,7 +1493,7 @@ namespace GrowlLanguage.Runtime
             return evaluated;
         }
 
-        private object InvokeCallable(object calleeValue, List<RuntimeArgument> args, GrowlNode callSite)
+        internal object InvokeCallable(object calleeValue, List<RuntimeArgument> args, GrowlNode callSite)
         {
             if (calleeValue is IRuntimeCallable callable)
                 return callable.Invoke(this, args, callSite);
@@ -1476,6 +1509,11 @@ namespace GrowlLanguage.Runtime
 
             if (owner is IDictionary dictionary)
             {
+                // Check for dict methods first, then fall through to key lookup
+                object dictMethod = GrowlDictMethods.Resolve(dictionary, field, this, attributeExpr);
+                if (dictMethod != null)
+                    return dictMethod;
+
                 if (TryGetDictionaryValue(dictionary, field, out object value))
                     return value;
 
@@ -1497,12 +1535,18 @@ namespace GrowlLanguage.Runtime
             {
                 if (field == "length" || field == "len")
                     return (long)s.Length;
+                object strMethod = GrowlStringMethods.Resolve(s, field, this, attributeExpr);
+                if (strMethod != null)
+                    return strMethod;
             }
 
             if (owner is IList list)
             {
                 if (field == "length" || field == "count")
                     return (long)list.Count;
+                object listMethod = GrowlListMethods.Resolve(list, field, this, attributeExpr);
+                if (listMethod != null)
+                    return listMethod;
             }
 
             if (owner is GrowlTuple tuple)
@@ -1515,6 +1559,9 @@ namespace GrowlLanguage.Runtime
             {
                 if (field == "length" || field == "count")
                     return (long)set.Elements.Count;
+                object setMethod = GrowlSetMethods.Resolve(set, field, this, attributeExpr);
+                if (setMethod != null)
+                    return setMethod;
             }
 
             if (owner is IRuntimeCallable callable)
@@ -2163,7 +2210,7 @@ namespace GrowlLanguage.Runtime
             }
         }
 
-        private static bool TryGetDouble(object value, out double result)
+        internal static bool TryGetDouble(object value, out double result)
         {
             switch (value)
             {
@@ -2222,7 +2269,7 @@ namespace GrowlLanguage.Runtime
             return (int)normalized;
         }
 
-        private static bool IsTruthy(object value)
+        internal static bool IsTruthy(object value)
         {
             if (value == null)
                 return false;
@@ -2385,7 +2432,7 @@ namespace GrowlLanguage.Runtime
                 dictionary[key] = value;
         }
 
-        private static bool RuntimeEquals(object left, object right)
+        internal static bool RuntimeEquals(object left, object right)
         {
             if (ReferenceEquals(left, right))
                 return true;
@@ -2476,7 +2523,7 @@ namespace GrowlLanguage.Runtime
             return false;
         }
 
-        private static string GetTypeName(object value)
+        internal static string GetTypeName(object value)
         {
             if (value == null)
                 return "none";

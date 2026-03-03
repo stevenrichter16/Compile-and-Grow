@@ -67,6 +67,53 @@ namespace GrowlLanguage.Analyzer
             DeclareBuiltinValue(global, "org", TypeSymbol.Unknown);
             DeclareBuiltinValue(global, "seed", TypeSymbol.Unknown);
             DeclareBuiltinValue(global, "env", TypeSymbol.Unknown);
+
+            // Math builtins
+            DeclareBuiltinFunction(global, "min", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "max", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "abs", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "round", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "sqrt", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "sin", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "cos", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "tan", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "clamp", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "lerp", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "remap", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "floor", TypeSymbol.Int);
+            DeclareBuiltinFunction(global, "ceil", TypeSymbol.Int);
+            DeclareBuiltinFunction(global, "pow", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "str", TypeSymbol.String);
+            DeclareBuiltinFunction(global, "warn", TypeSymbol.None);
+            DeclareBuiltinFunction(global, "error", TypeSymbol.None);
+
+            // Random builtins
+            DeclareBuiltinFunction(global, "random", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "random_int", TypeSymbol.Int);
+            DeclareBuiltinFunction(global, "random_choice", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "noise", TypeSymbol.Float);
+            DeclareBuiltinFunction(global, "chance", TypeSymbol.Bool);
+
+            // Biological logic builtins
+            DeclareBuiltinFunction(global, "every", TypeSymbol.Bool);
+            DeclareBuiltinFunction(global, "after", TypeSymbol.Bool);
+            DeclareBuiltinFunction(global, "between", TypeSymbol.Bool);
+            DeclareBuiltinFunction(global, "season", TypeSymbol.String);
+            DeclareBuiltinFunction(global, "time_of_day", TypeSymbol.String);
+
+            // Constants
+            DeclareBuiltinValue(global, "TICK", TypeSymbol.Int);
+            DeclareBuiltinValue(global, "SELF", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "NONE", TypeSymbol.None);
+            DeclareBuiltinValue(global, "UP", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "DOWN", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "LEFT", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "RIGHT", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "NORTH", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "SOUTH", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "EAST", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "WEST", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "math", TypeSymbol.Unknown);
         }
 
         private static void DeclareBuiltinFunction(Scope global, string name, TypeSymbol returnType)
