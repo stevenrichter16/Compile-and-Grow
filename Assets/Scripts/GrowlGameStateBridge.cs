@@ -580,7 +580,12 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         double intensity = TryReadNumberOptional(args, index: 1, name: "intensity", defaultValue: 1d);
         double radius = TryReadNumberOptional(args, index: 2, name: "radius", defaultValue: 1d);
 
-        result = growthTickManager.EmitSignal(signalType, intensity, radius, organismEntity.OrganismName);
+        // Energy cost: 1 + (radius * 0.5)
+        double energyCost = 1.0 + radius * 0.5;
+        organismEntity.TryAddState("energy", -energyCost, out _, out _);
+
+        Vector3 pos = organismEntity != null ? organismEntity.transform.position : Vector3.zero;
+        result = growthTickManager.EmitSignal(signalType, intensity, radius, organismEntity.OrganismName, pos);
 
         // Also queue for local respond-to blocks
         if (_bioContext != null)
@@ -1979,8 +1984,17 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         return value;
     }
 
+    private SignalProxy _signalProxy;
+
     private object GetOrgProxyValue(string key)
     {
+        if (string.Equals(key, "signals", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_signalProxy == null)
+                _signalProxy = new SignalProxy(this);
+            return _signalProxy;
+        }
+
         organismEntity.TryGetState(key, out object value);
         return value;
     }
@@ -1999,6 +2013,12 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
 
     private void SetOrgProxyValue(string key, object value)
     {
+        if (string.Equals(key, "signals", StringComparison.OrdinalIgnoreCase))
+        {
+            Debug.LogWarning("org.signals is read-only.", this);
+            return;
+        }
+
         if (!organismEntity.TrySetState(key, value, out string error) && !string.IsNullOrEmpty(error))
             Debug.LogWarning(error, this);
     }
@@ -2267,6 +2287,173 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 number = 0d;
                 return false;
         }
+    }
+
+    private sealed class SignalProxy : IDictionary
+    {
+        private readonly GrowlGameStateBridge _bridge;
+        private RuntimeBuiltinFunction _emitFn;
+        private RuntimeBuiltinFunction _receiveFn;
+
+        public SignalProxy(GrowlGameStateBridge bridge)
+        {
+            _bridge = bridge;
+        }
+
+        public object this[object key]
+        {
+            get
+            {
+                string k = (key?.ToString() ?? "").ToLowerInvariant();
+                switch (k)
+                {
+                    case "emit":
+                        if (_emitFn == null)
+                            _emitFn = new RuntimeBuiltinFunction("emit", EmitHandler);
+                        return _emitFn;
+                    case "receive":
+                        if (_receiveFn == null)
+                            _receiveFn = new RuntimeBuiltinFunction("receive", ReceiveHandler);
+                        return _receiveFn;
+                    default:
+                        return null;
+                }
+            }
+            set { /* read-only */ }
+        }
+
+        private object EmitHandler(Interpreter interp, List<RuntimeArgument> args, GrowlLanguage.AST.GrowlNode site)
+        {
+            if (args.Count < 1 || !(args[0].Value is string signalType))
+            {
+                Debug.LogWarning("[SignalProxy] emit() requires a string signal type as the first argument.");
+                return null;
+            }
+
+            double intensity = 1.0;
+            double radius = 1.0;
+            for (int i = 1; i < args.Count; i++)
+            {
+                if (string.Equals(args[i].Name, "intensity", StringComparison.OrdinalIgnoreCase) && TryConvertNum(args[i].Value, out double intVal))
+                    intensity = intVal;
+                else if (string.Equals(args[i].Name, "radius", StringComparison.OrdinalIgnoreCase) && TryConvertNum(args[i].Value, out double radVal))
+                    radius = radVal;
+                else if (i == 1 && args[i].Name == null && TryConvertNum(args[i].Value, out double posIntensity))
+                    intensity = posIntensity;
+                else if (i == 2 && args[i].Name == null && TryConvertNum(args[i].Value, out double posRadius))
+                    radius = posRadius;
+            }
+
+            // Energy cost: 1 + (radius * 0.5)
+            double energyCost = 1.0 + radius * 0.5;
+            _bridge.organismEntity.TryAddState("energy", -energyCost, out _, out _);
+
+            Vector3 pos = _bridge.organismEntity != null ? _bridge.organismEntity.transform.position : Vector3.zero;
+            var result = _bridge.growthTickManager.EmitSignal(signalType, intensity, radius, _bridge.organismEntity.OrganismName, pos);
+
+            // Queue for local respond-to blocks
+            if (_bridge._bioContext != null)
+            {
+                var eventData = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["type"] = signalType,
+                    ["intensity"] = intensity,
+                    ["radius"] = radius,
+                    ["source"] = _bridge.organismEntity.OrganismName,
+                };
+                _bridge._bioContext.QueueEvent(signalType, eventData);
+            }
+
+            return result;
+        }
+
+        private object ReceiveHandler(Interpreter interp, List<RuntimeArgument> args, GrowlLanguage.AST.GrowlNode site)
+        {
+            string typeFilter = null;
+            float maxDistance = float.MaxValue;
+
+            for (int i = 0; i < args.Count; i++)
+            {
+                if (string.Equals(args[i].Name, "type", StringComparison.OrdinalIgnoreCase) && args[i].Value is string t)
+                    typeFilter = t;
+                else if (string.Equals(args[i].Name, "max_distance", StringComparison.OrdinalIgnoreCase) && TryConvertNum(args[i].Value, out double md))
+                    maxDistance = (float)md;
+                else if (i == 0 && args[i].Name == null && args[i].Value is string posType)
+                    typeFilter = posType;
+                else if (i == 1 && args[i].Name == null && TryConvertNum(args[i].Value, out double posDist))
+                    maxDistance = (float)posDist;
+            }
+
+            Vector3 receiverPos = _bridge.organismEntity != null ? _bridge.organismEntity.transform.position : Vector3.zero;
+            long currentTick = _bridge.growthTickManager.CurrentTick;
+            string selfName = _bridge.organismEntity != null ? _bridge.organismEntity.OrganismName : "";
+
+            // Query signals from previous tick (delivered by pre-pass) and current tick
+            var signals = _bridge.growthTickManager.GetSignalsInRange(receiverPos, currentTick - 1, typeFilter, maxDistance);
+            var currentSignals = _bridge.growthTickManager.GetSignalsInRange(receiverPos, currentTick, typeFilter, maxDistance);
+            signals.AddRange(currentSignals);
+
+            var resultList = new List<object>();
+            for (int i = 0; i < signals.Count; i++)
+            {
+                var sig = signals[i];
+                // Skip own signals
+                if (string.Equals(sig.sender, selfName, StringComparison.Ordinal))
+                    continue;
+
+                float dist = Vector3.Distance(receiverPos, sig.senderPosition);
+                Vector3 dir = dist > 0.001f ? (sig.senderPosition - receiverPos).normalized : Vector3.zero;
+
+                var signalDict = new Dictionary<object, object>
+                {
+                    ["type"] = sig.type,
+                    ["intensity"] = (double)sig.intensity,
+                    ["distance"] = (double)dist,
+                    ["direction"] = new GrowlVector(dir.x, dir.y, dir.z),
+                    ["sender"] = sig.sender,
+                    ["data"] = null,
+                };
+                resultList.Add(signalDict);
+            }
+
+            return resultList;
+        }
+
+        private static bool TryConvertNum(object value, out double number)
+        {
+            switch (value)
+            {
+                case int v: number = v; return true;
+                case long v: number = v; return true;
+                case float v: number = v; return true;
+                case double v: number = v; return true;
+                default: number = 0; return false;
+            }
+        }
+
+        // IDictionary boilerplate
+        public ICollection Keys => new List<object> { "emit", "receive" };
+        public ICollection Values => new List<object> { this["emit"], this["receive"] };
+        public bool IsReadOnly => true;
+        public bool IsFixedSize => true;
+        public int Count => 2;
+        public object SyncRoot => this;
+        public bool IsSynchronized => false;
+        public void Add(object key, object value) { }
+        public void Clear() { }
+        public void Remove(object key) { }
+        public bool Contains(object key)
+        {
+            string k = (key?.ToString() ?? "").ToLowerInvariant();
+            return k == "emit" || k == "receive";
+        }
+        public IDictionaryEnumerator GetEnumerator()
+        {
+            var dict = new Dictionary<object, object> { ["emit"] = this["emit"], ["receive"] = this["receive"] };
+            return ((IDictionary)dict).GetEnumerator();
+        }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        public void CopyTo(Array array, int index) { }
     }
 
     private sealed class StateBackedDictionary : IDictionary

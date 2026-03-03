@@ -38,7 +38,7 @@ namespace GrowlLanguage.Runtime
     {
     }
 
-    internal readonly struct RuntimeArgument
+    public readonly struct RuntimeArgument
     {
         public string Name { get; }
         public object Value { get; }
@@ -50,13 +50,13 @@ namespace GrowlLanguage.Runtime
         }
     }
 
-    internal interface IRuntimeCallable
+    public interface IRuntimeCallable
     {
         string Name { get; }
         object Invoke(Interpreter interpreter, List<RuntimeArgument> args, GrowlNode callSite);
     }
 
-    internal sealed class RuntimeBuiltinFunction : IRuntimeCallable
+    public sealed class RuntimeBuiltinFunction : IRuntimeCallable
     {
         private readonly Func<Interpreter, List<RuntimeArgument>, GrowlNode, object> _impl;
 
@@ -295,7 +295,7 @@ namespace GrowlLanguage.Runtime
         }
     }
 
-    internal sealed class Interpreter
+    public sealed class Interpreter
     {
         private readonly RuntimeOptions _options;
         private readonly IGrowlRuntimeHost _host;

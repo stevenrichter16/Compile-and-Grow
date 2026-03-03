@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using GrowlLanguage.Runtime;
 
@@ -53,6 +54,10 @@ public sealed class GeneExecutionManager : MonoBehaviour
 
         var organisms = FindObjectsOfType<OrganismEntity>();
 
+        // Deliver signals emitted last tick to nearby organisms
+        if (tick > 1)
+            DeliverCrossOrganismSignals(tick - 1, organisms);
+
         for (int i = 0; i < organisms.Length; i++)
         {
             var org = organisms[i];
@@ -107,6 +112,64 @@ public sealed class GeneExecutionManager : MonoBehaviour
                     Debug.LogWarning($"[GeneExec] {org.OrganismName}: {result.Messages[m]}", org);
                     ErrorMutationClassifier.ApplyMutation(org, result.Messages[m]);
                 }
+            }
+        }
+    }
+
+    private void DeliverCrossOrganismSignals(long emitTick, OrganismEntity[] organisms)
+    {
+        if (_tickManager == null)
+            return;
+
+        List<GrowthTickManager.SignalRecord> signals = _tickManager.GetSignalsFromTick(emitTick);
+        if (signals.Count == 0)
+            return;
+
+        const string bioContextKey = "_bio_context";
+
+        for (int s = 0; s < signals.Count; s++)
+        {
+            GrowthTickManager.SignalRecord sig = signals[s];
+
+            for (int o = 0; o < organisms.Length; o++)
+            {
+                OrganismEntity org = organisms[o];
+                if (!org.IsAlive)
+                    continue;
+
+                // Skip self — emitter already received its own signal at emit time
+                if (string.Equals(org.OrganismName, sig.sender, System.StringComparison.Ordinal))
+                    continue;
+
+                float dist = Vector3.Distance(org.transform.position, sig.senderPosition);
+                if (dist > sig.radius)
+                    continue;
+
+                // Get or create bio context for this organism
+                BiologicalContext bioCtx;
+                if (org.TryGetMemoryValue(bioContextKey, out object existing) && existing is BiologicalContext ctx)
+                {
+                    bioCtx = ctx;
+                }
+                else
+                {
+                    bioCtx = new BiologicalContext();
+                    org.SetMemoryValue(bioContextKey, bioCtx);
+                }
+
+                Vector3 dir = dist > 0.001f ? (sig.senderPosition - org.transform.position).normalized : Vector3.zero;
+
+                var eventData = new Dictionary<string, object>(System.StringComparer.Ordinal)
+                {
+                    ["type"] = sig.type,
+                    ["intensity"] = (double)sig.intensity,
+                    ["distance"] = (double)dist,
+                    ["direction"] = new GrowlVector(dir.x, dir.y, dir.z),
+                    ["sender"] = sig.sender,
+                    ["data"] = null,
+                };
+
+                bioCtx.QueueEvent(sig.type, eventData);
             }
         }
     }

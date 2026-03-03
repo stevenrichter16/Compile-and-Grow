@@ -14,6 +14,7 @@ public sealed class GrowthTickManager : MonoBehaviour
         public float radius;
         public string sender;
         public long tick;
+        public Vector3 senderPosition;
 
         public Dictionary<object, object> ToRuntimeDictionary()
         {
@@ -92,7 +93,7 @@ public sealed class GrowthTickManager : MonoBehaviour
         totalSpawnedSeeds += count;
     }
 
-    public Dictionary<object, object> EmitSignal(string signalType, double intensity, double radius, string sender)
+    public Dictionary<object, object> EmitSignal(string signalType, double intensity, double radius, string sender, Vector3 senderPosition = default)
     {
         var record = new SignalRecord
         {
@@ -101,10 +102,40 @@ public sealed class GrowthTickManager : MonoBehaviour
             radius = Mathf.Max(0f, (float)radius),
             sender = string.IsNullOrEmpty(sender) ? "unnamed" : sender,
             tick = currentTick,
+            senderPosition = senderPosition,
         };
 
         _signals.Add(record);
         return record.ToRuntimeDictionary();
+    }
+
+    public List<SignalRecord> GetSignalsFromTick(long tick)
+    {
+        var result = new List<SignalRecord>();
+        for (int i = 0; i < _signals.Count; i++)
+        {
+            if (_signals[i].tick == tick)
+                result.Add(_signals[i]);
+        }
+        return result;
+    }
+
+    public List<SignalRecord> GetSignalsInRange(Vector3 receiverPos, long tick, string typeFilter, float maxDistance)
+    {
+        var result = new List<SignalRecord>();
+        for (int i = 0; i < _signals.Count; i++)
+        {
+            SignalRecord sig = _signals[i];
+            if (sig.tick != tick)
+                continue;
+            if (typeFilter != null && !string.Equals(sig.type, typeFilter, System.StringComparison.Ordinal))
+                continue;
+            float dist = Vector3.Distance(receiverPos, sig.senderPosition);
+            if (maxDistance > 0f && dist > maxDistance)
+                continue;
+            result.Add(sig);
+        }
+        return result;
     }
 
     public List<object> CreateSignalRuntimeList()
