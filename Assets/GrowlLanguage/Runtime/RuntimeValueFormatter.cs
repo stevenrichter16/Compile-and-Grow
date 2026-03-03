@@ -125,22 +125,63 @@ namespace GrowlLanguage.Runtime
 
             if (value is IDictionary dictionary)
             {
-                var sb = new StringBuilder();
-                sb.Append("{");
-
-                bool first = true;
+                // Class instance: display as ClassName(field=val, ...)
+                bool isClassInstance = false;
+                string className = null;
                 foreach (DictionaryEntry entry in dictionary)
                 {
-                    if (!first)
-                        sb.Append(", ");
-                    first = false;
-                    sb.Append(Format(entry.Key));
-                    sb.Append(": ");
-                    sb.Append(Format(entry.Value));
+                    if (entry.Key is string ek && ek == "__class")
+                    {
+                        isClassInstance = true;
+                        break;
+                    }
+                    if (entry.Key is string tk && tk == "__type" && entry.Value is string tv && tv != "__super__")
+                    {
+                        className = tv;
+                    }
                 }
 
-                sb.Append("}");
-                return sb.ToString();
+                if (isClassInstance && className != null)
+                {
+                    var sb = new StringBuilder();
+                    sb.Append(className);
+                    sb.Append("(");
+                    bool first = true;
+                    foreach (DictionaryEntry entry in dictionary)
+                    {
+                        string key = entry.Key as string;
+                        if (key == "__type" || key == "__class" || key == "__mro")
+                            continue;
+                        if (!first)
+                            sb.Append(", ");
+                        first = false;
+                        sb.Append(key);
+                        sb.Append("=");
+                        sb.Append(Format(entry.Value));
+                    }
+                    sb.Append(")");
+                    return sb.ToString();
+                }
+
+                // Plain dict / struct
+                {
+                    var sb = new StringBuilder();
+                    sb.Append("{");
+
+                    bool first = true;
+                    foreach (DictionaryEntry entry in dictionary)
+                    {
+                        if (!first)
+                            sb.Append(", ");
+                        first = false;
+                        sb.Append(Format(entry.Key));
+                        sb.Append(": ");
+                        sb.Append(Format(entry.Value));
+                    }
+
+                    sb.Append("}");
+                    return sb.ToString();
+                }
             }
 
             if (value is IEnumerable enumerable && !(value is string))

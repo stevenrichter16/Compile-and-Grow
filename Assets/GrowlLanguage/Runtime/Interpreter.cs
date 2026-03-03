@@ -151,6 +151,83 @@ namespace GrowlLanguage.Runtime
         }
     }
 
+    internal sealed class RuntimeClassType : IRuntimeCallable
+    {
+        public string Name { get; }
+        public RuntimeClassType Superclass { get; }
+        public Dictionary<string, FnDecl> Methods { get; }
+        public Dictionary<string, FnDecl> TraitMethods { get; }
+        public Dictionary<string, FnDecl> MixinMethods { get; }
+        public List<string> TraitNames { get; }
+        public List<string> MixinNames { get; }
+        public bool IsAbstract { get; }
+        public RuntimeEnvironment Closure { get; }
+
+        public RuntimeClassType(
+            string name,
+            RuntimeClassType superclass,
+            Dictionary<string, FnDecl> methods,
+            Dictionary<string, FnDecl> traitMethods,
+            Dictionary<string, FnDecl> mixinMethods,
+            List<string> traitNames,
+            List<string> mixinNames,
+            bool isAbstract,
+            RuntimeEnvironment closure)
+        {
+            Name = name;
+            Superclass = superclass;
+            Methods = methods;
+            TraitMethods = traitMethods;
+            MixinMethods = mixinMethods;
+            TraitNames = traitNames;
+            MixinNames = mixinNames;
+            IsAbstract = isAbstract;
+            Closure = closure;
+        }
+
+        public object Invoke(Interpreter interpreter, List<RuntimeArgument> args, GrowlNode callSite)
+        {
+            return interpreter.InvokeClassConstructor(this, args, callSite);
+        }
+
+        public FnDecl FindMethod(string name)
+        {
+            if (Methods.TryGetValue(name, out FnDecl method))
+                return method;
+            if (MixinMethods.TryGetValue(name, out method))
+                return method;
+            if (TraitMethods.TryGetValue(name, out method))
+                return method;
+            if (Superclass != null)
+                return Superclass.FindMethod(name);
+            return null;
+        }
+    }
+
+    internal sealed class RuntimeTraitType
+    {
+        public string Name { get; }
+        public Dictionary<string, FnDecl> Methods { get; }
+
+        public RuntimeTraitType(string name, Dictionary<string, FnDecl> methods)
+        {
+            Name = name;
+            Methods = methods;
+        }
+    }
+
+    internal sealed class RuntimeMixinType
+    {
+        public string Name { get; }
+        public Dictionary<string, FnDecl> Methods { get; }
+
+        public RuntimeMixinType(string name, Dictionary<string, FnDecl> methods)
+        {
+            Name = name;
+            Methods = methods;
+        }
+    }
+
     internal sealed class RuntimeEnvironment
     {
         private readonly Dictionary<string, object> _values = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -344,6 +421,97 @@ namespace GrowlLanguage.Runtime
             return instance;
         }
 
+        internal object InvokeClassConstructor(RuntimeClassType classType, List<RuntimeArgument> args, GrowlNode callSite)
+        {
+            if (classType.IsAbstract)
+            {
+                RuntimeError("Cannot instantiate abstract class '" + classType.Name + "'.", callSite);
+                return null;
+            }
+
+            var instance = new Dictionary<object, object>();
+            instance["__type"] = classType.Name;
+            instance["__class"] = classType;
+
+            // Build MRO for `is` checks: own class + superclasses + traits
+            var mro = new List<string>();
+            for (RuntimeClassType c = classType; c != null; c = c.Superclass)
+                mro.Add(c.Name);
+            mro.AddRange(classType.TraitNames);
+            instance["__mro"] = mro;
+
+            // Find and invoke `fn new(...)` constructor
+            FnDecl constructor = classType.FindMethod("new");
+            if (constructor != null)
+            {
+                InvokeClassMethod(classType, instance, constructor, args, callSite);
+            }
+            else if (args.Count > 0)
+            {
+                RuntimeError("Class '" + classType.Name + "' has no constructor 'fn new()' but was called with arguments.", callSite);
+            }
+
+            return instance;
+        }
+
+        private object InvokeClassMethod(
+            RuntimeClassType classType,
+            Dictionary<object, object> instance,
+            FnDecl method,
+            List<RuntimeArgument> args,
+            GrowlNode callSite)
+        {
+            var function = RuntimeUserFunction.FromFunctionDeclaration(method, classType.Closure);
+            var callEnv = new RuntimeEnvironment(function.Closure);
+            callEnv.Define(function.Name, function);
+
+            // Bind self to the instance
+            callEnv.Define("self", instance);
+
+            // Bind super proxy if superclass exists
+            if (classType.Superclass != null)
+            {
+                var superProxy = new Dictionary<object, object>();
+                superProxy["__type"] = "__super__";
+                superProxy["__class"] = classType.Superclass;
+                superProxy["__instance"] = instance;
+                callEnv.Define("super", superProxy);
+            }
+
+            // Bind parameters, skipping `self` if it's the first declared param
+            List<Param> parameters = function.Parameters;
+            int paramStart = 0;
+            if (parameters.Count > 0 && parameters[0].Name == "self")
+                paramStart = 1;
+
+            BindFunctionArgumentsWithOffset(function, args, callEnv, callSite, paramStart);
+
+            try
+            {
+                if (function.StatementBody != null)
+                {
+                    ExecuteBlock(function.StatementBody, callEnv);
+                    return null;
+                }
+                return EvaluateInEnvironment(function.ExpressionBody, callEnv);
+            }
+            catch (ReturnSignal ret)
+            {
+                return ret.Value;
+            }
+        }
+
+        private RuntimeBuiltinFunction MakeBoundMethod(
+            RuntimeClassType classType,
+            Dictionary<object, object> instance,
+            FnDecl method)
+        {
+            return new RuntimeBuiltinFunction(method.Name, (interp, args, site) =>
+            {
+                return InvokeClassMethod(classType, instance, method, args, site);
+            });
+        }
+
         private void RegisterBuiltins()
         {
             _globals.Define("print", new RuntimeBuiltinFunction("print", BuiltinPrint));
@@ -423,7 +591,7 @@ namespace GrowlLanguage.Runtime
             for (int i = 0; i < args.Count; i++)
             {
                 object value = args[i].Value;
-                parts.Add(value is string s ? s : RuntimeValueFormatter.Format(value));
+                parts.Add(value is string s ? s : ToConcatString(value));
             }
 
             _outputLines.Add(string.Join(" ", parts));
@@ -470,6 +638,9 @@ namespace GrowlLanguage.Runtime
                 return (long)tuple.Elements.Count;
             if (value is GrowlSet set)
                 return (long)set.Elements.Count;
+
+            if (TryInvokeDunder(value, "__len__", new List<RuntimeArgument>(), callSite, out object lenResult))
+                return lenResult;
 
             RuntimeError("len() does not support value of type '" + GetTypeName(value) + "'.", callSite);
             return null;
@@ -602,6 +773,121 @@ namespace GrowlLanguage.Runtime
             }
         }
 
+        private void BindFunctionArgumentsWithOffset(
+            RuntimeUserFunction function,
+            List<RuntimeArgument> args,
+            RuntimeEnvironment callEnv,
+            GrowlNode callSite,
+            int paramStart)
+        {
+            var assigned = new Dictionary<string, object>(StringComparer.Ordinal);
+            var variadicAssigned = new Dictionary<string, List<object>>(StringComparer.Ordinal);
+            int nextPositionalParam = paramStart;
+
+            for (int i = 0; i < args.Count; i++)
+            {
+                RuntimeArgument arg = args[i];
+
+                if (!string.IsNullOrEmpty(arg.Name))
+                {
+                    int namedIndex = FindParameter(function.Parameters, arg.Name);
+                    if (namedIndex < 0 || namedIndex < paramStart)
+                    {
+                        RuntimeError(
+                            "Function '" + function.Name + "' has no parameter named '" + arg.Name + "'.",
+                            callSite);
+                    }
+
+                    Param namedParam = function.Parameters[namedIndex];
+                    if (namedParam.IsVariadic)
+                    {
+                        if (!variadicAssigned.TryGetValue(namedParam.Name, out List<object> namedList))
+                        {
+                            namedList = new List<object>();
+                            variadicAssigned[namedParam.Name] = namedList;
+                        }
+                        namedList.Add(arg.Value);
+                        continue;
+                    }
+
+                    if (assigned.ContainsKey(namedParam.Name))
+                    {
+                        RuntimeError(
+                            "Function '" + function.Name + "' received duplicate argument for parameter '" + namedParam.Name + "'.",
+                            callSite);
+                    }
+
+                    assigned[namedParam.Name] = arg.Value;
+                    continue;
+                }
+
+                while (nextPositionalParam < function.Parameters.Count)
+                {
+                    Param candidate = function.Parameters[nextPositionalParam];
+                    if (candidate.IsVariadic)
+                        break;
+                    if (assigned.ContainsKey(candidate.Name))
+                    {
+                        nextPositionalParam++;
+                        continue;
+                    }
+                    break;
+                }
+
+                if (nextPositionalParam >= function.Parameters.Count)
+                {
+                    RuntimeError(
+                        "Function '" + function.Name + "' received too many positional arguments.",
+                        callSite);
+                }
+
+                Param positionalParam = function.Parameters[nextPositionalParam];
+                if (positionalParam.IsVariadic)
+                {
+                    if (!variadicAssigned.TryGetValue(positionalParam.Name, out List<object> list))
+                    {
+                        list = new List<object>();
+                        variadicAssigned[positionalParam.Name] = list;
+                    }
+                    list.Add(arg.Value);
+                }
+                else
+                {
+                    assigned[positionalParam.Name] = arg.Value;
+                    nextPositionalParam++;
+                }
+            }
+
+            for (int p = paramStart; p < function.Parameters.Count; p++)
+            {
+                Param param = function.Parameters[p];
+                if (param.IsVariadic)
+                {
+                    if (!variadicAssigned.TryGetValue(param.Name, out List<object> variadicValues))
+                        variadicValues = new List<object>();
+                    callEnv.Define(param.Name, variadicValues);
+                    continue;
+                }
+
+                if (assigned.TryGetValue(param.Name, out object explicitValue))
+                {
+                    callEnv.Define(param.Name, explicitValue);
+                    continue;
+                }
+
+                if (param.DefaultValue != null)
+                {
+                    object defaultValue = EvaluateInEnvironment(param.DefaultValue, callEnv);
+                    callEnv.Define(param.Name, defaultValue);
+                    continue;
+                }
+
+                RuntimeError(
+                    "Function '" + function.Name + "' is missing required argument '" + param.Name + "'.",
+                    callSite);
+            }
+        }
+
         private static int FindParameter(List<Param> parameters, string name)
         {
             if (parameters == null || string.IsNullOrEmpty(name))
@@ -667,15 +953,85 @@ namespace GrowlLanguage.Runtime
                     }
                     return;
 
+                case TraitDecl traitDecl:
+                    {
+                        var traitMethods = new Dictionary<string, FnDecl>(System.StringComparer.Ordinal);
+                        for (int i = 0; i < traitDecl.Members.Count; i++)
+                        {
+                            if (traitDecl.Members[i] is FnDecl fn)
+                                traitMethods[fn.Name] = fn;
+                        }
+                        _environment.Define(traitDecl.Name, new RuntimeTraitType(traitDecl.Name, traitMethods));
+                    }
+                    return;
+
+                case MixinDecl mixinDecl:
+                    {
+                        var mixMethods = new Dictionary<string, FnDecl>(System.StringComparer.Ordinal);
+                        for (int i = 0; i < mixinDecl.Methods.Count; i++)
+                            mixMethods[mixinDecl.Methods[i].Name] = mixinDecl.Methods[i];
+                        _environment.Define(mixinDecl.Name, new RuntimeMixinType(mixinDecl.Name, mixMethods));
+                    }
+                    return;
+
                 case ClassDecl classDecl:
-                case TraitDecl _:
-                case MixinDecl _:
+                    {
+                        // Resolve superclass
+                        RuntimeClassType superclass = null;
+                        if (classDecl.Superclass != null && !string.IsNullOrEmpty(classDecl.Superclass.Name))
+                        {
+                            if (_environment.TryGet(classDecl.Superclass.Name, out object superVal) && superVal is RuntimeClassType sc)
+                                superclass = sc;
+                        }
+
+                        // Collect own methods
+                        var clsMethods = new Dictionary<string, FnDecl>(System.StringComparer.Ordinal);
+                        for (int i = 0; i < classDecl.Members.Count; i++)
+                        {
+                            if (classDecl.Members[i] is FnDecl fn)
+                                clsMethods[fn.Name] = fn;
+                        }
+
+                        // Collect trait default methods
+                        var clsTraitMethods = new Dictionary<string, FnDecl>(System.StringComparer.Ordinal);
+                        var clsTraitNames = new List<string>();
+                        for (int i = 0; i < classDecl.Traits.Count; i++)
+                        {
+                            string traitName = classDecl.Traits[i].Name;
+                            clsTraitNames.Add(traitName);
+                            if (_environment.TryGet(traitName, out object traitVal) && traitVal is RuntimeTraitType trait)
+                            {
+                                foreach (var kvp in trait.Methods)
+                                {
+                                    if (kvp.Value.Body != null && kvp.Value.Body.Count > 0)
+                                        clsTraitMethods[kvp.Key] = kvp.Value;
+                                }
+                            }
+                        }
+
+                        // Collect mixin methods
+                        var clsMixinMethods = new Dictionary<string, FnDecl>(System.StringComparer.Ordinal);
+                        var clsMixinNames = new List<string>();
+                        for (int i = 0; i < classDecl.Mixins.Count; i++)
+                        {
+                            string mixinName = classDecl.Mixins[i].Name;
+                            clsMixinNames.Add(mixinName);
+                            if (_environment.TryGet(mixinName, out object mixinVal) && mixinVal is RuntimeMixinType mixin)
+                            {
+                                foreach (var kvp in mixin.Methods)
+                                    clsMixinMethods[kvp.Key] = kvp.Value;
+                            }
+                        }
+
+                        _environment.Define(classDecl.Name, new RuntimeClassType(
+                            classDecl.Name, superclass, clsMethods, clsTraitMethods, clsMixinMethods,
+                            clsTraitNames, clsMixinNames, classDecl.IsAbstract, _environment));
+                    }
+                    return;
+
                 case TypeAliasDecl _:
                 case ModuleDecl _:
                 case ImportStmt _:
-                    // Declarations are currently no-op at runtime unless they are callable.
-                    if (node is ClassDecl cd)
-                        _environment.Define(cd.Name, cd.Name);
                     return;
 
                 case ConstDecl constDecl:
@@ -1303,7 +1659,7 @@ namespace GrowlLanguage.Runtime
                         for (int i = 0; i < interpolated.Segments.Count; i++)
                         {
                             object segmentValue = Evaluate(interpolated.Segments[i]);
-                            pieces.Add(segmentValue is string s ? s : RuntimeValueFormatter.Format(segmentValue));
+                            pieces.Add(segmentValue is string s ? s : ToConcatString(segmentValue));
                         }
 
                         return string.Join(string.Empty, pieces);
@@ -1498,8 +1854,26 @@ namespace GrowlLanguage.Runtime
             if (calleeValue is IRuntimeCallable callable)
                 return callable.Invoke(this, args, callSite);
 
+            // Try __call__ dunder on class instances
+            if (TryInvokeDunder(calleeValue, "__call__", args, callSite, out object callResult))
+                return callResult;
+
             RuntimeError("Value of type '" + GetTypeName(calleeValue) + "' is not callable.", callSite);
             return null;
+        }
+
+        private bool TryInvokeDunder(object instance, string dunderName, List<RuntimeArgument> args, GrowlNode site, out object result)
+        {
+            result = null;
+            if (!(instance is IDictionary dict))
+                return false;
+            if (!TryGetDictionaryValue(dict, "__class", out object classObj) || !(classObj is RuntimeClassType classType))
+                return false;
+            FnDecl method = classType.FindMethod(dunderName);
+            if (method == null)
+                return false;
+            result = InvokeClassMethod(classType, (Dictionary<object, object>)dict, method, args, site);
+            return true;
         }
 
         private object ReadAttribute(AttributeExpr attributeExpr)
@@ -1509,7 +1883,35 @@ namespace GrowlLanguage.Runtime
 
             if (owner is IDictionary dictionary)
             {
-                // Check for dict methods first, then fall through to key lookup
+                // Check if this is a class instance (has __class key)
+                if (TryGetDictionaryValue(dictionary, "__class", out object classObj) && classObj is RuntimeClassType classType)
+                {
+                    // Field lookup first (from the instance dict)
+                    if (field != "__type" && field != "__class" && field != "__mro" &&
+                        TryGetDictionaryValue(dictionary, field, out object fieldValue))
+                        return fieldValue;
+
+                    // Method lookup on the class (own → mixin → trait → superclass)
+                    FnDecl method = classType.FindMethod(field);
+                    if (method != null)
+                        return MakeBoundMethod(classType, (Dictionary<object, object>)dictionary, method);
+
+                    RuntimeError("'" + classType.Name + "' instance has no attribute '" + field + "'.", attributeExpr);
+                }
+
+                // Check if this is a super proxy
+                if (TryGetDictionaryValue(dictionary, "__type", out object typeTag) &&
+                    typeTag is string typeStr && typeStr == "__super__" &&
+                    TryGetDictionaryValue(dictionary, "__class", out object superClassObj) && superClassObj is RuntimeClassType superClassType &&
+                    TryGetDictionaryValue(dictionary, "__instance", out object instanceObj) && instanceObj is Dictionary<object, object> realInstance)
+                {
+                    FnDecl superMethod = superClassType.FindMethod(field);
+                    if (superMethod != null)
+                        return MakeBoundMethod(superClassType, realInstance, superMethod);
+                    RuntimeError("Super class '" + superClassType.Name + "' has no method '" + field + "'.", attributeExpr);
+                }
+
+                // Plain dict/struct: check dict methods first, then key lookup
                 object dictMethod = GrowlDictMethods.Resolve(dictionary, field, this, attributeExpr);
                 if (dictMethod != null)
                     return dictMethod;
@@ -1926,6 +2328,8 @@ namespace GrowlLanguage.Runtime
                         if (left is GrowlTuple leftTuple && right is GrowlTuple rightTuple)
                             return new GrowlTuple(ConcatReadOnly(leftTuple.Elements, rightTuple.Elements));
 
+                        if (TryInvokeDunder(left, "__add__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object addResult))
+                            return addResult;
                         RuntimeError("Operator '+' does not support operands '" + GetTypeName(left) + "' and '" + GetTypeName(right) + "'.", site);
                         return null;
                     }
@@ -1937,6 +2341,8 @@ namespace GrowlLanguage.Runtime
                         if (TryGetDouble(left, out double ld) && TryGetDouble(right, out double rd))
                             return ld - rd;
 
+                        if (TryInvokeDunder(left, "__sub__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object subResult))
+                            return subResult;
                         RuntimeError("Operator '-' expects numeric operands.", site);
                         return null;
                     }
@@ -1948,12 +2354,16 @@ namespace GrowlLanguage.Runtime
                         if (TryGetDouble(left, out double ld) && TryGetDouble(right, out double rd))
                             return ld * rd;
 
+                        if (TryInvokeDunder(left, "__mul__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object mulResult))
+                            return mulResult;
                         RuntimeError("Operator '*' expects numeric operands.", site);
                         return null;
                     }
 
                 case TokenType.Slash:
                     {
+                        if (TryInvokeDunder(left, "__div__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object divResult))
+                            return divResult;
                         double denominator = ExpectNumber(right, site, "Division expects numeric operands.");
                         if (Math.Abs(denominator) < double.Epsilon)
                             RuntimeError("Division by zero.", site);
@@ -1964,6 +2374,8 @@ namespace GrowlLanguage.Runtime
 
                 case TokenType.SlashSlash:
                     {
+                        if (TryInvokeDunder(left, "__floordiv__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object fdivResult))
+                            return fdivResult;
                         double denominator = ExpectNumber(right, site, "Floor division expects numeric operands.");
                         if (Math.Abs(denominator) < double.Epsilon)
                             RuntimeError("Division by zero.", site);
@@ -1979,12 +2391,16 @@ namespace GrowlLanguage.Runtime
                         if (TryGetDouble(left, out double ld) && TryGetDouble(right, out double rd))
                             return ld % rd;
 
+                        if (TryInvokeDunder(left, "__mod__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object modResult))
+                            return modResult;
                         RuntimeError("Operator '%' expects numeric operands.", site);
                         return null;
                     }
 
                 case TokenType.StarStar:
                     {
+                        if (TryInvokeDunder(left, "__pow__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object powResult))
+                            return powResult;
                         double exp = ExpectNumber(right, site, "Exponentiation expects numeric operands.");
                         double bas = ExpectNumber(left, site, "Exponentiation expects numeric operands.");
                         return Math.Pow(bas, exp);
@@ -2026,22 +2442,46 @@ namespace GrowlLanguage.Runtime
                            (int)ExpectInteger(right, site, "Bit shift expects integers.");
 
                 case TokenType.EqualEqual:
-                    return RuntimeEquals(left, right);
+                    {
+                        if (TryInvokeDunder(left, "__eq__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object eqResult))
+                            return IsTruthy(eqResult);
+                        return RuntimeEquals(left, right);
+                    }
 
                 case TokenType.BangEqual:
-                    return !RuntimeEquals(left, right);
+                    {
+                        if (TryInvokeDunder(left, "__eq__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object neqResult))
+                            return !IsTruthy(neqResult);
+                        return !RuntimeEquals(left, right);
+                    }
 
                 case TokenType.Less:
-                    return CompareValues(left, right, site) < 0;
+                    {
+                        if (TryInvokeDunder(left, "__lt__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object ltResult))
+                            return IsTruthy(ltResult);
+                        return CompareValues(left, right, site) < 0;
+                    }
 
                 case TokenType.LessEqual:
-                    return CompareValues(left, right, site) <= 0;
+                    {
+                        if (TryInvokeDunder(left, "__le__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object leResult))
+                            return IsTruthy(leResult);
+                        return CompareValues(left, right, site) <= 0;
+                    }
 
                 case TokenType.Greater:
-                    return CompareValues(left, right, site) > 0;
+                    {
+                        if (TryInvokeDunder(left, "__gt__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object gtResult))
+                            return IsTruthy(gtResult);
+                        return CompareValues(left, right, site) > 0;
+                    }
 
                 case TokenType.GreaterEqual:
-                    return CompareValues(left, right, site) >= 0;
+                    {
+                        if (TryInvokeDunder(left, "__ge__", new List<RuntimeArgument> { new RuntimeArgument(null, right) }, site, out object geResult))
+                            return IsTruthy(geResult);
+                        return CompareValues(left, right, site) >= 0;
+                    }
 
                 case TokenType.QuestionQuestion:
                     return left ?? right;
@@ -2056,6 +2496,35 @@ namespace GrowlLanguage.Runtime
 
                 case TokenType.Is:
                     {
+                        // Class/trait instance-of check
+                        if (left is IDictionary isDict)
+                        {
+                            if (right is RuntimeClassType rightClass || right is RuntimeTraitType)
+                            {
+                                string targetName = right is RuntimeClassType rc ? rc.Name : ((RuntimeTraitType)right).Name;
+                                bool isInstance = false;
+                                if (TryGetDictionaryValue(isDict, "__mro", out object mroObj) && mroObj is List<string> mro)
+                                {
+                                    for (int m = 0; m < mro.Count; m++)
+                                    {
+                                        if (mro[m] == targetName)
+                                        {
+                                            isInstance = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                else if (TryGetDictionaryValue(isDict, "__type", out object typeObj) && typeObj is string typeName)
+                                {
+                                    isInstance = typeName == targetName;
+                                }
+
+                                if (string.Equals(op.Value, "is not", StringComparison.Ordinal))
+                                    return !isInstance;
+                                return isInstance;
+                            }
+                        }
+
                         bool equal = RuntimeEquals(left, right);
                         if (string.Equals(op.Value, "is not", StringComparison.Ordinal))
                             return !equal;
@@ -2184,12 +2653,14 @@ namespace GrowlLanguage.Runtime
             return 0;
         }
 
-        private static string ToConcatString(object value)
+        private string ToConcatString(object value)
         {
             if (value == null)
                 return "none";
             if (value is string s)
                 return s;
+            if (TryInvokeDunder(value, "__str__", new List<RuntimeArgument>(), null, out object strResult) && strResult is string strVal)
+                return strVal;
             return RuntimeValueFormatter.Format(value);
         }
 
