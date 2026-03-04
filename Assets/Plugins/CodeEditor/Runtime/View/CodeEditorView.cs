@@ -51,6 +51,8 @@ namespace CodeEditor.View
         private Image _currentLineHighlight;
         private CompletionPopup _completionPopup;
         private ICompletionProvider _completionProvider;
+        private SignatureHintPopup _signatureHintPopup;
+        private ISignatureHintProvider _signatureHintProvider;
         private int _lastSyncedVersion = -1;
 
         public event Action<string> TextChanged;
@@ -94,7 +96,13 @@ namespace CodeEditor.View
             _completionProvider = provider;
         }
 
+        public void SetSignatureHintProvider(ISignatureHintProvider provider)
+        {
+            _signatureHintProvider = provider;
+        }
+
         internal CompletionPopup CompletionPopup => _completionPopup;
+        internal SignatureHintPopup SignatureHintPopup => _signatureHintPopup;
 
         public void Focus()
         {
@@ -319,6 +327,18 @@ namespace CodeEditor.View
                 _completionPopup = popupGo.AddComponent<CompletionPopup>();
                 _completionPopup.Initialize(_textArea, _monoFont, _fontSize);
                 _completionPopup.ItemAccepted += OnCompletionAccepted;
+
+                // Signature hint tooltip (reuse same parent)
+                var hintGo = new GameObject("SignatureHintHost", typeof(RectTransform));
+                hintGo.transform.SetParent(_textArea, false);
+                var hintRt = hintGo.GetComponent<RectTransform>();
+                hintRt.anchorMin = Vector2.zero;
+                hintRt.anchorMax = Vector2.one;
+                hintRt.sizeDelta = Vector2.zero;
+                hintRt.anchoredPosition = Vector2.zero;
+
+                _signatureHintPopup = hintGo.AddComponent<SignatureHintPopup>();
+                _signatureHintPopup.Initialize(_textArea, _monoFont, _fontSize);
             }
         }
 
@@ -469,6 +489,41 @@ namespace CodeEditor.View
         public void DismissCompletion()
         {
             _completionPopup?.Hide();
+        }
+
+        /// <summary>
+        /// Shows or updates the signature hint tooltip for the function call at the cursor.
+        /// Called from InputHandler after typing '(' or ',', and during typing inside a call.
+        /// </summary>
+        public void TriggerSignatureHint()
+        {
+            if (_signatureHintProvider == null || _signatureHintPopup == null || _linePool == null) return;
+
+            int activeParam;
+            var hint = _signatureHintProvider.GetSignatureHint(_doc, _doc.Cursor, out activeParam);
+            if (hint == null)
+            {
+                _signatureHintPopup.Hide();
+                return;
+            }
+
+            if (_signatureHintPopup.IsVisible)
+            {
+                _signatureHintPopup.UpdateHint(hint, activeParam);
+            }
+            else
+            {
+                var caretPx = _linePool.GetPixelPosition(_doc.Cursor);
+                _signatureHintPopup.Show(hint, activeParam, caretPx, _linePool.LineHeight);
+            }
+        }
+
+        /// <summary>
+        /// Dismisses the signature hint tooltip.
+        /// </summary>
+        public void DismissSignatureHint()
+        {
+            _signatureHintPopup?.Hide();
         }
 
         private void OnCompletionAccepted(CompletionItem item)

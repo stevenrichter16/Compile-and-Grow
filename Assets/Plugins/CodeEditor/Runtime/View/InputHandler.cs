@@ -190,10 +190,15 @@ namespace CodeEditor.View
                 && _editorView.CompletionPopup != null
                 && _editorView.CompletionPopup.IsVisible;
 
-            if (popupVisible && GetKeyDown(KeyCode.Escape))
+            bool hintVisible = _editorView != null
+                && _editorView.SignatureHintPopup != null
+                && _editorView.SignatureHintPopup.IsVisible;
+
+            if ((popupVisible || hintVisible) && GetKeyDown(KeyCode.Escape))
             {
-                _editorView.DismissCompletion();
-                Debug.Log("[Input] Escape (DismissCompletion)");
+                if (popupVisible) _editorView.DismissCompletion();
+                if (hintVisible) _editorView.DismissSignatureHint();
+                Debug.Log("[Input] Escape (DismissPopups)");
                 return;
             }
 
@@ -283,8 +288,9 @@ namespace CodeEditor.View
                 }
                 _controller.Backspace();
                 SyncAndSuppressFrame();
-                // Re-trigger completion with updated prefix, or dismiss if prefix gone
+                // Re-trigger completion/hint with updated prefix, or dismiss if prefix gone
                 if (popupVisible) _editorView.TriggerCompletion(force: false);
+                if (hintVisible) _editorView.TriggerSignatureHint();
                 return;
             }
             if (HandleRepeatable(KeyCode.Delete))
@@ -333,20 +339,43 @@ namespace CodeEditor.View
             {
                 // Dot-access: trigger immediately
                 _editorView.TriggerCompletion(force: false);
+                _editorView.DismissSignatureHint();
+            }
+            else if (lastChar == '(')
+            {
+                // Open paren: dismiss completion, show signature hint
+                _editorView.DismissCompletion();
+                _editorView.TriggerSignatureHint();
+            }
+            else if (lastChar == ')')
+            {
+                // Close paren: dismiss signature hint, re-check if we're still inside an outer call
+                _editorView.DismissSignatureHint();
+                _editorView.TriggerSignatureHint();
+            }
+            else if (lastChar == ',')
+            {
+                // Comma: update active parameter in signature hint
+                _editorView.TriggerSignatureHint();
             }
             else if (isWordChar)
             {
-                // Identifier character: trigger if prefix is >= 2 chars,
+                // Identifier character: trigger completion if prefix is >= 2 chars,
                 // or update filter if popup is already visible
                 var (prefix, _) = _controller.GetWordPrefixAtCursor();
                 if (prefix.Length >= 2 || (_editorView.CompletionPopup != null && _editorView.CompletionPopup.IsVisible))
                 {
                     _editorView.TriggerCompletion(force: false);
                 }
+                // Also keep signature hint updated while typing inside a call
+                if (_editorView.SignatureHintPopup != null && _editorView.SignatureHintPopup.IsVisible)
+                {
+                    _editorView.TriggerSignatureHint();
+                }
             }
             else
             {
-                // Non-identifier, non-dot: dismiss
+                // Non-identifier, non-dot: dismiss completion
                 _editorView.DismissCompletion();
             }
         }

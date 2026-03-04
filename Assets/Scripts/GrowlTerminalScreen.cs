@@ -34,6 +34,7 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         BuildLayout();
 
         _editor.SetCompletionProvider(new GrowlCompletionProvider());
+        _editor.SetSignatureHintProvider(new GrowlSignatureHintProvider());
         _editor.CtrlEnterPressed += RunCode;
     }
 

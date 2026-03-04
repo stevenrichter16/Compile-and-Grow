@@ -162,5 +162,60 @@ namespace CodeEditor.Tests
                 return new CompletionResult(results, range);
             }
         }
+
+        // ── SignatureHint tests ─────────────────────────────────────────
+
+        [Test]
+        public void SignatureHint_Format_NoActiveParam()
+        {
+            var hint = new SignatureHint("clamp", new[]
+            {
+                new SignatureParameter("value"),
+                new SignatureParameter("low"),
+                new SignatureParameter("high"),
+            });
+            Assert.AreEqual("clamp(value, low, high)", hint.Format());
+        }
+
+        [Test]
+        public void SignatureHint_Format_ActiveParamBolded()
+        {
+            var hint = new SignatureHint("clamp", new[]
+            {
+                new SignatureParameter("value"),
+                new SignatureParameter("low"),
+                new SignatureParameter("high"),
+            });
+            Assert.AreEqual("clamp(value, <b>low</b>, high)", hint.Format(1));
+        }
+
+        [Test]
+        public void SignatureHint_Format_OptionalParamSuffix()
+        {
+            var hint = new SignatureHint("round", new[]
+            {
+                new SignatureParameter("n"),
+                new SignatureParameter("places", optional: true),
+            });
+            Assert.AreEqual("round(n, places?)", hint.Format());
+        }
+
+        [Test]
+        public void SignatureHint_Format_NoParams()
+        {
+            var hint = new SignatureHint("random", new SignatureParameter[0]);
+            Assert.AreEqual("random()", hint.Format());
+        }
+
+        [Test]
+        public void SignatureHint_Format_ActiveOptionalParam()
+        {
+            var hint = new SignatureHint("round", new[]
+            {
+                new SignatureParameter("n"),
+                new SignatureParameter("places", optional: true),
+            });
+            Assert.AreEqual("round(n, <b>places?</b>)", hint.Format(1));
+        }
     }
 }
