@@ -30,6 +30,9 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
     [SerializeField] private bool visible = false;
     [SerializeField] private bool hideOnStart = true;
     [SerializeField] private KeyCode toggleKey = KeyCode.T;
+
+    public bool IsVisible => visible;
+    public event System.Action OnClosed;
     [SerializeField] private TerminalUiSizePreset uiSizePreset = TerminalUiSizePreset.ExtraLarge;
     [SerializeField] private bool showSizePresetSelector = true;
     [SerializeField] private bool showTemplateSelector = true;
@@ -89,10 +92,20 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
             runtimeHostComponent = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
     }
 
+    public void SetVisible(bool show)
+    {
+        visible = show;
+    }
+
     private void Update()
     {
+        bool wasVisible = visible;
+
         if (IsTogglePressed())
             visible = !visible;
+
+        if (wasVisible && !visible)
+            OnClosed?.Invoke();
     }
 
     private void OnDisable()
@@ -118,6 +131,11 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
         Keyboard keyboard = Keyboard.current;
         if (keyboard != null)
         {
+            bool cmdOrCtrl = keyboard.leftCommandKey.isPressed || keyboard.rightCommandKey.isPressed ||
+                             keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
+            if (!cmdOrCtrl)
+                return false;
+
             switch (toggleKey)
             {
                 case KeyCode.T:
@@ -132,7 +150,9 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
         }
 #endif
 #if ENABLE_LEGACY_INPUT_MANAGER
-        return Input.GetKeyDown(toggleKey);
+        bool legacyCmdOrCtrl = Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand) ||
+                               Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+        return legacyCmdOrCtrl && Input.GetKeyDown(toggleKey);
 #else
         return false;
 #endif
@@ -217,7 +237,7 @@ public sealed class GrowlTerminalOverlay : MonoBehaviour
         GUILayout.EndScrollView();
 
         GUILayout.Space(sectionGap * 0.25f);
-        GUILayout.Label("Toggle: " + toggleKey, _footerStyle, GUILayout.Height(footerHeight));
+        GUILayout.Label("Toggle: Cmd/Ctrl+" + toggleKey, _footerStyle, GUILayout.Height(footerHeight));
 
         GUILayout.EndVertical();
 
