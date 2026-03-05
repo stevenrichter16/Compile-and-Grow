@@ -15,6 +15,7 @@ namespace CodeEditor.Language
         Variable,
         Error,
         Decorator,
+        BiologicalKeyword,
     }
 
     public readonly struct HighlightToken

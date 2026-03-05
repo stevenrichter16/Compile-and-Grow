@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using CodeEditor.Core;
+using CodeEditor.Language;
 
 namespace CodeEditor.View
 {
@@ -12,6 +14,7 @@ namespace CodeEditor.View
         private readonly List<TMP_Text> _pool = new List<TMP_Text>();
         private readonly Dictionary<int, int> _lineToPoolIndex = new Dictionary<int, int>();
         private readonly HashSet<int> _usedSlots = new HashSet<int>();
+        private readonly Dictionary<int, string> _slotRawText = new Dictionary<int, string>();
         private RectTransform _parent;
         private TMP_FontAsset _font;
         private float _fontSize;
@@ -51,6 +54,7 @@ namespace CodeEditor.View
                 int slot = _lineToPoolIndex[line];
                 _pool[slot].gameObject.SetActive(false);
                 _usedSlots.Remove(slot);
+                _slotRawText.Remove(slot);
                 _lineToPoolIndex.Remove(line);
             }
 
@@ -63,10 +67,13 @@ namespace CodeEditor.View
 
                 if (_lineToPoolIndex.TryGetValue(line, out int existingSlot))
                 {
-                    // Already assigned — update text only if changed
-                    var tmp = _pool[existingSlot];
-                    if (tmp.text != lineText)
-                        tmp.text = lineText;
+                    // Already assigned — update text only if raw content changed
+                    string cached;
+                    if (!_slotRawText.TryGetValue(existingSlot, out cached) || cached != lineText)
+                    {
+                        _slotRawText[existingSlot] = lineText;
+                        _pool[existingSlot].text = lineText;
+                    }
                     PositionSlot(existingSlot, line);
                     continue;
                 }
@@ -76,6 +83,7 @@ namespace CodeEditor.View
 
                 _lineToPoolIndex[line] = freeSlot;
                 _usedSlots.Add(freeSlot);
+                _slotRawText[freeSlot] = lineText;
                 var text = _pool[freeSlot];
                 text.text = lineText;
                 text.gameObject.SetActive(true);
@@ -152,7 +160,7 @@ namespace CodeEditor.View
             tmp.enableWordWrapping = false;
             tmp.overflowMode = TextOverflowModes.Overflow;
             tmp.alignment = TextAlignmentOptions.TopLeft;
-            tmp.richText = false;
+            tmp.richText = true;
             tmp.raycastTarget = false;
 
             _pool.Add(tmp);
@@ -238,8 +246,68 @@ namespace CodeEditor.View
         internal string GetDisplayedText(int lineIndex)
         {
             if (_lineToPoolIndex.TryGetValue(lineIndex, out int slot))
+            {
+                if (_slotRawText.TryGetValue(slot, out string raw))
+                    return raw;
                 return _pool[slot].text;
+            }
             return null;
+        }
+
+        public void ApplyHighlighting(int lineIndex, IReadOnlyList<HighlightToken> tokens,
+            Func<TokenCategory, Color32> colorMapper, Color32 defaultColor)
+        {
+            if (!_lineToPoolIndex.TryGetValue(lineIndex, out int slot)) return;
+            if (!_slotRawText.TryGetValue(slot, out string rawText)) return;
+            if (string.IsNullOrEmpty(rawText) || tokens == null || tokens.Count == 0) return;
+
+            var sb = new StringBuilder(rawText.Length * 3);
+            int pos = 0;
+
+            for (int t = 0; t < tokens.Count; t++)
+            {
+                int tokStart = Math.Max(0, Math.Min(tokens[t].StartColumn, rawText.Length));
+                int tokEnd = Math.Max(tokStart, Math.Min(tokens[t].StartColumn + tokens[t].Length, rawText.Length));
+
+                // Uncolored text before this token
+                if (pos < tokStart)
+                    AppendNoparse(sb, rawText, pos, tokStart - pos);
+
+                // Colored token text
+                if (tokStart < tokEnd)
+                {
+                    Color32 c = colorMapper(tokens[t].Category);
+                    sb.Append("<color=#");
+                    AppendHex(sb, c);
+                    sb.Append('>');
+                    AppendNoparse(sb, rawText, tokStart, tokEnd - tokStart);
+                    sb.Append("</color>");
+                }
+
+                pos = tokEnd;
+            }
+
+            // Remaining text after last token
+            if (pos < rawText.Length)
+                AppendNoparse(sb, rawText, pos, rawText.Length - pos);
+
+            _pool[slot].text = sb.ToString();
+        }
+
+        private static readonly char[] s_hex = "0123456789ABCDEF".ToCharArray();
+
+        private static void AppendHex(StringBuilder sb, Color32 c)
+        {
+            sb.Append(s_hex[c.r >> 4]); sb.Append(s_hex[c.r & 0xF]);
+            sb.Append(s_hex[c.g >> 4]); sb.Append(s_hex[c.g & 0xF]);
+            sb.Append(s_hex[c.b >> 4]); sb.Append(s_hex[c.b & 0xF]);
+        }
+
+        private static void AppendNoparse(StringBuilder sb, string text, int start, int length)
+        {
+            sb.Append("<noparse>");
+            sb.Append(text, start, length);
+            sb.Append("</noparse>");
         }
 
         private int GetFreeSlot()

@@ -38,6 +38,9 @@ namespace CodeEditor.View
         [SerializeField] private Color _lineNumberColor = new Color(1f, 1f, 1f, 0.4f);
         [SerializeField] private Color _currentLineHighlightColor = new Color(1f, 1f, 1f, 0.05f);
 
+        [Header("Syntax Highlighting")]
+        [SerializeField] private HighlightTheme _highlightTheme = new HighlightTheme();
+
         private DocumentModel _doc;
         private EditorController _controller;
         private LinePool _linePool;
@@ -53,7 +56,13 @@ namespace CodeEditor.View
         private ICompletionProvider _completionProvider;
         private SignatureHintPopup _signatureHintPopup;
         private ISignatureHintProvider _signatureHintProvider;
+        private ILanguageService _pendingLanguageService;
         private int _lastSyncedVersion = -1;
+
+        // Syntax highlighting cache
+        private System.Collections.Generic.List<System.Collections.Generic.IReadOnlyList<HighlightToken>> _lineTokenCache;
+        private System.Collections.Generic.List<object> _lineStateCache;
+        private int _highlightDirtyFrom = int.MaxValue;
 
         public event Action<string> TextChanged;
         public event Action CtrlEnterPressed;
@@ -88,7 +97,13 @@ namespace CodeEditor.View
 
         public void SetLanguageService(ILanguageService service)
         {
-            _controller?.SetLanguageService(service);
+            if (_controller != null)
+                _controller.SetLanguageService(service);
+            else
+                _pendingLanguageService = service;
+            _lineTokenCache = null;
+            _lineStateCache = null;
+            _highlightDirtyFrom = 0;
         }
 
         public void SetCompletionProvider(ICompletionProvider provider)
@@ -128,6 +143,12 @@ namespace CodeEditor.View
             _doc = new DocumentModel();
             var config = new EditorConfig { IndentSize = _indentSize };
             _controller = new EditorController(_doc, config);
+
+            if (_pendingLanguageService != null)
+            {
+                _controller.SetLanguageService(_pendingLanguageService);
+                _pendingLanguageService = null;
+            }
 
             if (_monoFont == null)
                 _monoFont = TMP_Settings.defaultFontAsset;
@@ -391,6 +412,9 @@ namespace CodeEditor.View
             // Update text lines
             _linePool?.UpdateVisibleLines(first, last, _doc);
 
+            // Apply syntax highlighting
+            ApplySyntaxHighlighting(first, last);
+
             // Update line numbers
             if (_gutter != null && _showLineNumbers)
                 _gutter.UpdateVisibleLines(first, last, _doc.LineCount);
@@ -437,9 +461,90 @@ namespace CodeEditor.View
             rt.sizeDelta = new Vector2(0, _linePool.LineHeight);
         }
 
+        // ── Syntax Highlighting ─────────────────────────────────────────
+
+        private void ApplySyntaxHighlighting(int first, int last)
+        {
+            if (_linePool == null || _controller == null || _highlightTheme == null) return;
+
+            var langService = _controller.LanguageService;
+            if (langService is PlainTextLanguageService) return;
+
+            int lineCount = _doc.LineCount;
+
+            // Ensure caches are sized correctly
+            if (_lineTokenCache == null)
+            {
+                _lineTokenCache = new System.Collections.Generic.List<System.Collections.Generic.IReadOnlyList<HighlightToken>>(lineCount);
+                _lineStateCache = new System.Collections.Generic.List<object>(lineCount);
+                for (int i = 0; i < lineCount; i++)
+                {
+                    _lineTokenCache.Add(null);
+                    _lineStateCache.Add(null);
+                }
+                _highlightDirtyFrom = 0;
+            }
+
+            // Resize caches if line count changed
+            while (_lineTokenCache.Count < lineCount)
+            {
+                _lineTokenCache.Add(null);
+                _lineStateCache.Add(null);
+            }
+            while (_lineTokenCache.Count > lineCount)
+            {
+                _lineTokenCache.RemoveAt(_lineTokenCache.Count - 1);
+                _lineStateCache.RemoveAt(_lineStateCache.Count - 1);
+            }
+
+            // Determine range to re-tokenize
+            int dirtyStart = Math.Min(_highlightDirtyFrom, first);
+            dirtyStart = Math.Max(0, dirtyStart);
+            int dirtyEnd = Math.Min(last, lineCount - 1);
+
+            // Re-tokenize dirty lines (from dirtyStart to at least last visible)
+            for (int line = dirtyStart; line <= dirtyEnd; line++)
+            {
+                string lineText = _doc.GetLine(line);
+                object startState = line > 0 ? _lineStateCache[line - 1] : null;
+
+                var tokens = langService.TokenizeLine(lineText, startState);
+                object endState = langService.GetLineEndState(lineText, startState);
+
+                _lineTokenCache[line] = tokens;
+
+                // If end state changed, cascade dirty to next line
+                object oldEndState = _lineStateCache[line];
+                _lineStateCache[line] = endState;
+
+                if (line == dirtyEnd && line < lineCount - 1 && !StateEquals(oldEndState, endState))
+                    dirtyEnd = Math.Min(dirtyEnd + 1, lineCount - 1);
+            }
+
+            _highlightDirtyFrom = int.MaxValue;
+
+            // Apply colors to visible lines
+            Color32 defaultColor = _highlightTheme.DefaultColor;
+            for (int line = first; line <= last && line < lineCount; line++)
+            {
+                var tokens = _lineTokenCache[line];
+                if (tokens != null && tokens.Count > 0)
+                    _linePool.ApplyHighlighting(line, tokens, _highlightTheme.GetColor, defaultColor);
+            }
+        }
+
+        private static bool StateEquals(object a, object b)
+        {
+            if (a == null && b == null) return true;
+            if (a == null || b == null) return false;
+            return a.Equals(b);
+        }
+
         private void OnDocumentChanged(DocumentChangeEventArgs args)
         {
             // Version change will trigger SyncView in LateUpdate
+            int changedLine = args.DeletedRange.Start.Line;
+            _highlightDirtyFrom = Math.Min(_highlightDirtyFrom, changedLine);
         }
 
         private void OnCursorMoved(TextPosition pos)

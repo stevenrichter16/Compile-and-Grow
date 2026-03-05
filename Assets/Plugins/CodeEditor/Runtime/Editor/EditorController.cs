@@ -31,6 +31,7 @@ namespace CodeEditor.Editor
         public DocumentModel Document => _doc;
         public CommandHistory History => _history;
         public EditorConfig Config => _config;
+        internal ILanguageService LanguageService => _languageService;
 
         public void SetLanguageService(ILanguageService service)
         {

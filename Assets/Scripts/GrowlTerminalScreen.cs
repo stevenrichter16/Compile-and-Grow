@@ -18,8 +18,7 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     [SerializeField] private int maxLoopIterations = 100000;
 
     private CodeEditorView _editor;
-    private TMP_Text _outputText;
-    private ScrollRect _outputScroll;
+    private TMP_InputField _outputInput;
     private string _output = string.Empty;
 
     private void Awake()
@@ -33,6 +32,7 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
         BuildLayout();
 
+        _editor.SetLanguageService(new GrowlLanguageService());
         _editor.SetCompletionProvider(new GrowlCompletionProvider());
         _editor.SetSignatureHintProvider(new GrowlSignatureHintProvider());
         _editor.CtrlEnterPressed += RunCode;
@@ -141,48 +141,54 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         // --- Output label ---
         CreateLabel("Output", panel.transform, 14, FontStyles.Bold, height: 20);
 
-        // --- Output scroll view ---
+        // --- Output (read-only, selectable TMP_InputField) ---
         var outputArea = CreateUIObject("OutputArea", panel.transform);
+        // Deactivate before adding TMP_InputField so OnEnable runs after configuration
+        outputArea.SetActive(false);
+
         var outputLE = outputArea.AddComponent<LayoutElement>();
         outputLE.flexibleHeight = 1;
         outputLE.minHeight = 60;
 
         var outputImg = outputArea.AddComponent<Image>();
         outputImg.color = new Color(0.09f, 0.09f, 0.11f, 1f);
+        outputImg.raycastTarget = true;
 
-        _outputScroll = outputArea.AddComponent<ScrollRect>();
-        _outputScroll.horizontal = false;
-        _outputScroll.vertical = true;
-        _outputScroll.movementType = ScrollRect.MovementType.Clamped;
+        // Text Area child (viewport with mask)
+        var textArea = CreateUIObject("Text Area", outputArea.transform);
+        var textAreaRt = textArea.GetComponent<RectTransform>();
+        Stretch(textAreaRt);
+        textAreaRt.offsetMin = new Vector2(6, 4);
+        textAreaRt.offsetMax = new Vector2(-6, -4);
+        textArea.AddComponent<RectMask2D>();
 
-        var outputMask = outputArea.AddComponent<Mask>();
-        outputMask.showMaskGraphic = true;
+        // Text child
+        var outputTextGo = CreateUIObject("Text", textArea.transform);
+        var outputTmp = outputTextGo.AddComponent<TextMeshProUGUI>();
+        outputTmp.fontSize = 13;
+        outputTmp.fontStyle = FontStyles.Normal;
+        outputTmp.color = new Color(0.75f, 0.85f, 0.75f, 1f);
+        outputTmp.alignment = TextAlignmentOptions.TopLeft;
+        outputTmp.enableWordWrapping = true;
+        outputTmp.richText = true;
+        var outputTmpRt = outputTextGo.GetComponent<RectTransform>();
+        Stretch(outputTmpRt);
 
-        var outputContent = CreateUIObject("OutputContent", outputArea.transform);
-        var outputContentRt = outputContent.GetComponent<RectTransform>();
-        outputContentRt.anchorMin = new Vector2(0, 1);
-        outputContentRt.anchorMax = new Vector2(1, 1);
-        outputContentRt.pivot = new Vector2(0, 1);
-        outputContentRt.sizeDelta = new Vector2(0, 0);
+        // Wire up TMP_InputField — all properties set before reactivation
+        _outputInput = outputArea.AddComponent<TMP_InputField>();
+        _outputInput.textComponent = outputTmp;
+        _outputInput.textViewport = textAreaRt;
+        _outputInput.targetGraphic = outputImg;
+        _outputInput.readOnly = true;
+        _outputInput.richText = true;
+        _outputInput.lineType = TMP_InputField.LineType.MultiLineNewline;
+        _outputInput.selectionColor = new Color(0.25f, 0.47f, 0.77f, 0.35f);
+        _outputInput.caretColor = new Color(0, 0, 0, 0);
+        _outputInput.caretWidth = 0;
+        _outputInput.text = "(no output)";
 
-        var csf = outputContent.AddComponent<ContentSizeFitter>();
-        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-
-        _outputText = CreateTMPText("OutputText", outputContent.transform, 13, FontStyles.Normal);
-        var outputTextRt = _outputText.GetComponent<RectTransform>();
-        outputTextRt.anchorMin = new Vector2(0, 1);
-        outputTextRt.anchorMax = new Vector2(1, 1);
-        outputTextRt.pivot = new Vector2(0, 1);
-        outputTextRt.sizeDelta = Vector2.zero;
-        _outputText.color = new Color(0.75f, 0.85f, 0.75f, 1f);
-        _outputText.alignment = TextAlignmentOptions.TopLeft;
-        _outputText.enableWordWrapping = true;
-        _outputText.text = "(no output)";
-        _outputText.margin = new Vector4(6, 4, 6, 4);
-
-        _outputScroll.content = outputContentRt;
-        _outputScroll.viewport = outputArea.GetComponent<RectTransform>();
+        // Now activate — OnEnable runs with everything properly configured
+        outputArea.SetActive(true);
 
         // --- Footer ---
         CreateLabel("T to open  |  Esc to close  |  Ctrl+Enter to run", panel.transform, 11, FontStyles.Italic, height: 18, color: new Color(1, 1, 1, 0.35f));
@@ -228,18 +234,15 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         }
 
         _output = lines.Count == 0 ? "(no output)" : string.Join("\n", lines);
-        if (_outputText != null)
-        {
-            _outputText.richText = true;
-            _outputText.text = _output;
-        }
+        if (_outputInput != null)
+            _outputInput.text = _output;
     }
 
     private void ClearOutput()
     {
         _output = string.Empty;
-        if (_outputText != null)
-            _outputText.text = "(no output)";
+        if (_outputInput != null)
+            _outputInput.text = "(no output)";
     }
 
     // --- UI helpers ---
