@@ -87,6 +87,7 @@ public sealed class GeneExecutionManager : MonoBehaviour
             {
                 AutoInvokeEntryFunction = true,
                 EntryFunctionName = _entryFunctionName,
+                EntryClassName = org.EntryClassName,
                 MaxLoopIterations = _maxLoopIterations,
                 Host = _bridge,
                 BioContext = bioContext,

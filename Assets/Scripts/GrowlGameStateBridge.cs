@@ -119,6 +119,9 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "spawn_seed":
                 return TrySpawnSeedBuiltin(args, out result, out errorMessage);
 
+            case "spawn":
+                return TrySpawnBuiltin(args, out result, out errorMessage);
+
             // ── morph module builtins ──
             case "morph_create_part":
                 return TryMorphCreatePartBuiltin(args, out result, out errorMessage);
@@ -614,6 +617,69 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         growthTickManager.AddSpawnedSeeds(count);
         errorMessage = null;
         return true;
+    }
+
+    private bool TrySpawnBuiltin(IReadOnlyList<RuntimeCallArgument> args, out object result, out string errorMessage)
+    {
+        // arg[0]: class_name (string, required)
+        if (!TryReadString(args, index: 0, name: "class_name", out string className, out errorMessage))
+        {
+            result = null;
+            return false;
+        }
+
+        // arg[1]: source (string, required)
+        if (!TryGetArg(args, index: 1, name: "source", out RuntimeCallArgument sourceArg) || sourceArg.Value == null)
+        {
+            result = null;
+            errorMessage = "spawn: missing source text.";
+            return false;
+        }
+        string source = sourceArg.Value.ToString();
+
+        // arg[2]: position (optional list of 3 numbers)
+        Vector3 position = organismEntity != null ? organismEntity.transform.position : Vector3.zero;
+        if (TryGetArg(args, index: 2, name: "position", out RuntimeCallArgument posArg) && posArg.Value != null)
+        {
+            if (posArg.Value is System.Collections.IList list && list.Count >= 3)
+            {
+                position = new Vector3(
+                    ToFloat(list[0]),
+                    ToFloat(list[1]),
+                    ToFloat(list[2]));
+            }
+        }
+
+        // Energy cost
+        const float spawnEnergyCost = 5f;
+        if (organismEntity != null)
+        {
+            organismEntity.TryGetState("energy", out object energyObj);
+            if (TryConvertToDouble(energyObj, out double eVal) && eVal < spawnEnergyCost)
+            {
+                result = false;
+                errorMessage = "spawn: insufficient energy (" + eVal + " < " + spawnEnergyCost + ").";
+                return false;
+            }
+            organismEntity.TryAddState("energy", -spawnEnergyCost, out _, out _);
+        }
+
+        // Create the new organism
+        var go = new GameObject("Organism_" + className);
+        go.transform.position = position;
+
+        var newOrg = go.AddComponent<OrganismEntity>();
+        newOrg.GrowlSource = source;
+        newOrg.EntryClassName = className;
+
+        result = true;
+        errorMessage = null;
+        return true;
+    }
+
+    private static float ToFloat(object value)
+    {
+        return TryConvertToDouble(value, out double d) ? (float)d : 0f;
     }
 
     // ── Morph module builtins ──────────────────────────────────────

@@ -62,6 +62,7 @@ namespace GrowlLanguage.Analyzer
             DeclareBuiltinFunction(global, "seed_add", TypeSymbol.Unknown);
             DeclareBuiltinFunction(global, "emit_signal", TypeSymbol.Unknown);
             DeclareBuiltinFunction(global, "spawn_seed", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "spawn", TypeSymbol.Unknown);
 
             DeclareBuiltinValue(global, "world", TypeSymbol.Unknown);
             DeclareBuiltinValue(global, "org", TypeSymbol.Unknown);
@@ -114,6 +115,21 @@ namespace GrowlLanguage.Analyzer
             DeclareBuiltinValue(global, "EAST", TypeSymbol.Unknown);
             DeclareBuiltinValue(global, "WEST", TypeSymbol.Unknown);
             DeclareBuiltinValue(global, "math", TypeSymbol.Unknown);
+
+            // Biological modules
+            DeclareBuiltinValue(global, "root", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "stem", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "leaf", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "photo", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "morph", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "defense", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "reproduce", TypeSymbol.Unknown);
+            DeclareBuiltinValue(global, "depot", TypeSymbol.Unknown);
+
+            // Global biological functions
+            DeclareBuiltinFunction(global, "synthesize", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "produce", TypeSymbol.Unknown);
+            DeclareBuiltinFunction(global, "emit", TypeSymbol.Unknown);
         }
 
         private static void DeclareBuiltinFunction(Scope global, string name, TypeSymbol returnType)

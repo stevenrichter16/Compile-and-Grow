@@ -48,6 +48,7 @@ namespace GrowlLanguage.Runtime
             try
             {
                 var interpreter = new Interpreter(options, outputLines);
+                interpreter.SetSource(source);
                 lastValue = interpreter.Execute(parse.Program);
             }
             catch (RuntimeExecutionException ex)

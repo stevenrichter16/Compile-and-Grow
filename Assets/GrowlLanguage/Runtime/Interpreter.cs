@@ -306,6 +306,7 @@ namespace GrowlLanguage.Runtime
         private RuntimeEnvironment _environment;
         private object _lastValue;
         private int _loopIterations;
+        private string _source;
 
         public Interpreter(RuntimeOptions options, List<string> outputLines)
         {
@@ -320,6 +321,8 @@ namespace GrowlLanguage.Runtime
             SeedHostGlobals();
         }
 
+        internal void SetSource(string source) { _source = source ?? string.Empty; }
+
         public object Execute(ProgramNode program)
         {
             if (program == null)
@@ -327,7 +330,39 @@ namespace GrowlLanguage.Runtime
 
             ExecuteBlock(program.Statements, _globals);
 
-            if (_options.AutoInvokeEntryFunction &&
+            string entryClassName = _options.EntryClassName;
+            if (!string.IsNullOrEmpty(entryClassName))
+            {
+                if (!_globals.TryGet(entryClassName, out object classValue) ||
+                    !(classValue is RuntimeClassType classType))
+                {
+                    RuntimeError("Entry class '" + entryClassName + "' not found.", program);
+                    return _lastValue;
+                }
+
+                if (classType.IsAbstract)
+                {
+                    RuntimeError("Cannot instantiate abstract class '" + entryClassName + "'.", program);
+                    return _lastValue;
+                }
+
+                object instance = InvokeClassConstructor(classType, new List<RuntimeArgument>(), program);
+
+                FnDecl mainMethod = classType.FindMethod("main");
+                if (mainMethod == null)
+                {
+                    RuntimeError("Class '" + entryClassName + "' has no 'main()' method.", program);
+                    return _lastValue;
+                }
+
+                _lastValue = InvokeClassMethod(
+                    classType,
+                    (Dictionary<object, object>)instance,
+                    mainMethod,
+                    new List<RuntimeArgument>(),
+                    program);
+            }
+            else if (_options.AutoInvokeEntryFunction &&
                 !string.IsNullOrEmpty(_options.EntryFunctionName) &&
                 _globals.TryGet(_options.EntryFunctionName, out object callableValue) &&
                 callableValue is IRuntimeCallable callable)
@@ -535,6 +570,8 @@ namespace GrowlLanguage.Runtime
             RegisterHostBuiltin("emit_signal");
             RegisterHostBuiltin("spawn_seed");
 
+            _globals.Define("spawn", new RuntimeBuiltinFunction("spawn", BuiltinSpawn));
+
             _globals.Define("warn", new RuntimeBuiltinFunction("warn", BuiltinWarn));
             _globals.Define("error", new RuntimeBuiltinFunction("error", BuiltinError));
 
@@ -542,6 +579,11 @@ namespace GrowlLanguage.Runtime
             GrowlRandomBuiltins.Register(_globals);
             GrowlBioBuiltins.Register(_globals, _bioContext);
             GrowlConstants.Register(_globals, _bioContext);
+
+            if (_host != null)
+            {
+                GrowlBioModules.Register(_globals, InvokeHostBuiltin);
+            }
         }
 
         private void RegisterHostBuiltin(string name)
@@ -583,6 +625,46 @@ namespace GrowlLanguage.Runtime
 
             RuntimeError(errorMessage, site);
             return null;
+        }
+
+        private object BuiltinSpawn(Interpreter _, List<RuntimeArgument> args, GrowlNode callSite)
+        {
+            if (args.Count < 1 || args[0].Value == null)
+            {
+                RuntimeError("spawn() requires a class as the first argument.", callSite);
+                return null;
+            }
+
+            string className;
+            if (args[0].Value is RuntimeClassType rct)
+            {
+                if (rct.IsAbstract)
+                {
+                    RuntimeError("spawn() cannot spawn abstract class '" + rct.Name + "'.", callSite);
+                    return null;
+                }
+                className = rct.Name;
+            }
+            else if (args[0].Value is string s)
+            {
+                className = s;
+            }
+            else
+            {
+                RuntimeError("spawn() first argument must be a class, got " + GetTypeName(args[0].Value) + ".", callSite);
+                return null;
+            }
+
+            object positionArg = args.Count >= 2 ? args[1].Value : null;
+
+            var bridgeArgs = new List<RuntimeArgument>
+            {
+                new RuntimeArgument("class_name", className),
+                new RuntimeArgument("source", _source ?? string.Empty),
+                new RuntimeArgument("position", positionArg),
+            };
+
+            return InvokeHostBuiltin("spawn", bridgeArgs, callSite);
         }
 
         private object BuiltinPrint(Interpreter _, List<RuntimeArgument> args, GrowlNode __)

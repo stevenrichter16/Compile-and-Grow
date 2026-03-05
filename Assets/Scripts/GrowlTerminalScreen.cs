@@ -21,6 +21,14 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private TMP_InputField _outputInput;
     private string _output = string.Empty;
 
+    // Tick mode
+    private bool _ticking;
+    private long _tickCount;
+    private OrganismEntity _sandboxOrganism;
+    private BiologicalContext _bioContext;
+    private GrowthTickManager _tickManager;
+    private TMP_Text _tickBtnLabel;
+
     private void Awake()
     {
         _editor = GetComponentInChildren<CodeEditorView>(true);
@@ -36,12 +44,19 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         _editor.SetCompletionProvider(new GrowlCompletionProvider());
         _editor.SetSignatureHintProvider(new GrowlSignatureHintProvider());
         _editor.CtrlEnterPressed += RunCode;
+        _editor.CtrlClickWord += OnCtrlClickWord;
     }
 
     private void OnDestroy()
     {
+        if (_ticking)
+            StopTicking();
+
         if (_editor != null)
+        {
             _editor.CtrlEnterPressed -= RunCode;
+            _editor.CtrlClickWord -= OnCtrlClickWord;
+        }
     }
 
     private void BuildLayout()
@@ -134,6 +149,10 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
         var clearBtn = CreateButton("Clear Output", buttonBar.transform, 130, 30);
         clearBtn.GetComponent<Button>().onClick.AddListener(ClearOutput);
+
+        var tickBtn = CreateButton("Start Tick", buttonBar.transform, 120, 30);
+        _tickBtnLabel = tickBtn.GetComponentInChildren<TMP_Text>();
+        tickBtn.GetComponent<Button>().onClick.AddListener(ToggleTick);
 
         // --- Separator ---
         CreateSeparator(panel.transform);
@@ -243,6 +262,214 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         _output = string.Empty;
         if (_outputInput != null)
             _outputInput.text = "(no output)";
+    }
+
+    // --- Tick mode ---
+
+    private void ToggleTick()
+    {
+        if (_ticking)
+            StopTicking();
+        else
+            StartTicking();
+    }
+
+    private void StartTicking()
+    {
+        _tickManager = FindObjectOfType<GrowthTickManager>();
+        if (_tickManager == null)
+        {
+            _output = "<color=#FF6666>No GrowthTickManager found in scene.</color>";
+            if (_outputInput != null) _outputInput.text = _output;
+            return;
+        }
+
+        // Create sandbox organism for the bridge to operate on
+        var sandboxGo = new GameObject("[TerminalSandboxOrganism]");
+        sandboxGo.hideFlags = HideFlags.HideInHierarchy;
+        _sandboxOrganism = sandboxGo.AddComponent<OrganismEntity>();
+
+        _bioContext = new BiologicalContext();
+        _tickCount = 0;
+        _output = "<color=#AAAAAA>Ticking started...</color>\n";
+        if (_outputInput != null) _outputInput.text = _output;
+
+        _tickManager.OnTickAdvanced += OnTickExecute;
+        _ticking = true;
+        if (_tickBtnLabel != null) _tickBtnLabel.text = "Stop Tick";
+    }
+
+    private void StopTicking()
+    {
+        if (_tickManager != null)
+            _tickManager.OnTickAdvanced -= OnTickExecute;
+
+        if (_sandboxOrganism != null)
+            Destroy(_sandboxOrganism.gameObject);
+
+        _sandboxOrganism = null;
+        _bioContext = null;
+        _ticking = false;
+        if (_tickBtnLabel != null) _tickBtnLabel.text = "Start Tick";
+    }
+
+    private void OnTickExecute(long tick)
+    {
+        if (_editor == null || _sandboxOrganism == null) return;
+
+        string source = _editor.Text;
+        if (string.IsNullOrWhiteSpace(source)) return;
+
+        var bridge = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+        bridge.SetOrganism(_sandboxOrganism);
+        _bioContext.CurrentTick = tick;
+        bridge.SetBioContext(_bioContext);
+
+        RuntimeResult result = GrowlRuntime.Execute(source, new RuntimeOptions
+        {
+            AutoInvokeEntryFunction = autoInvokeEntryFunction,
+            EntryFunctionName = entryFunctionName,
+            MaxLoopIterations = maxLoopIterations,
+            Host = bridge,
+            BioContext = _bioContext,
+        });
+
+        _tickCount++;
+
+        // Build per-tick output
+        var lines = new List<string>();
+
+        if (result.Messages.Count > 0)
+        {
+            for (int i = 0; i < result.Messages.Count; i++)
+                lines.Add("<color=#FF6666>" + result.Messages[i] + "</color>");
+        }
+
+        for (int i = 0; i < result.OutputLines.Count; i++)
+            lines.Add(result.OutputLines[i]);
+
+        // Only append if there's something to show
+        if (lines.Count > 0)
+        {
+            _output += "<color=#888888>--- Tick " + _tickCount + " ---</color>\n";
+            _output += string.Join("\n", lines) + "\n";
+            if (_outputInput != null) _outputInput.text = _output;
+        }
+    }
+
+    // --- Go-to-definition ---
+
+    private void OnCtrlClickWord(string word, int clickedLine)
+    {
+        if (_editor == null || string.IsNullOrEmpty(word)) return;
+
+        int defLine = FindDefinitionLine(word);
+        if (defLine >= 0)
+            _editor.FlashLine(defLine);
+    }
+
+    private int FindDefinitionLine(string word)
+    {
+        string text = _editor.Text;
+        if (string.IsNullOrEmpty(text)) return -1;
+
+        string[] lines = text.Split('\n');
+        int firstCandidate = -1;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string trimmed = lines[i].TrimStart();
+
+            // fn word(...) — function declaration
+            if (trimmed.StartsWith("fn "))
+            {
+                string afterFn = trimmed.Substring(3);
+                string name = ExtractIdentifier(afterFn, 0);
+                if (name == word) return i;
+
+                // Check parameters
+                int parenOpen = afterFn.IndexOf('(');
+                if (parenOpen >= 0 && firstCandidate < 0)
+                {
+                    if (ContainsIdentifier(afterFn.Substring(parenOpen + 1), word))
+                        firstCandidate = i;
+                }
+            }
+
+            // class/struct/enum/trait word
+            string[] declKeywords = { "class ", "struct ", "enum ", "trait " };
+            for (int k = 0; k < declKeywords.Length; k++)
+            {
+                if (trimmed.StartsWith(declKeywords[k]))
+                {
+                    string name = ExtractIdentifier(trimmed, declKeywords[k].Length);
+                    if (name == word) return i;
+                }
+            }
+
+            // for word in ...
+            if (trimmed.StartsWith("for ") && firstCandidate < 0)
+            {
+                string name = ExtractIdentifier(trimmed, 4);
+                if (name == word)
+                    firstCandidate = i;
+            }
+
+            // word = ... (first assignment, not ==)
+            if (firstCandidate < 0 && IsAssignmentTo(trimmed, word))
+                firstCandidate = i;
+        }
+
+        return firstCandidate;
+    }
+
+    private static string ExtractIdentifier(string text, int start)
+    {
+        int i = start;
+        while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+            i++;
+        return i > start ? text.Substring(start, i - start) : null;
+    }
+
+    private static bool ContainsIdentifier(string text, string word)
+    {
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (char.IsLetter(text[i]) || text[i] == '_')
+            {
+                int start = i;
+                while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+                    i++;
+                if (text.Substring(start, i - start) == word)
+                    return true;
+            }
+            else
+            {
+                i++;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsAssignmentTo(string trimmed, string word)
+    {
+        if (!trimmed.StartsWith(word)) return false;
+        int afterWord = word.Length;
+        if (afterWord >= trimmed.Length) return false;
+        if (char.IsLetterOrDigit(trimmed[afterWord]) || trimmed[afterWord] == '_')
+            return false;
+
+        int j = afterWord;
+        while (j < trimmed.Length && trimmed[j] == ' ') j++;
+
+        if (j < trimmed.Length && trimmed[j] == '=')
+        {
+            if (j + 1 < trimmed.Length && trimmed[j + 1] == '=')
+                return false;
+            return true;
+        }
+        return false;
     }
 
     // --- UI helpers ---

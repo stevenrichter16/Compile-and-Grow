@@ -11,6 +11,7 @@ public sealed class OrganismEntity : MonoBehaviour
 
     [Header("Growl")]
     [SerializeField, TextArea(3, 10)] private string growlSource = "";
+    [SerializeField] private string entryClassName = "";
 
     [Header("Core State")]
     [SerializeField] private bool alive = true;
@@ -57,6 +58,12 @@ public sealed class OrganismEntity : MonoBehaviour
     {
         get => growlSource;
         set => growlSource = value ?? "";
+    }
+
+    public string EntryClassName
+    {
+        get => entryClassName;
+        set => entryClassName = value ?? "";
     }
 
     public bool TryGetState(string key, out object value)
