@@ -68,6 +68,40 @@ namespace CodeEditor.View
             switch (_clickCount)
             {
                 case 1:
+                    if (InputHandler.IsCtrlHeld())
+                    {
+                        // Resolve caret position to a word. GetTextPosition returns
+                        // a caret (between-character) position, so clicking the right
+                        // half of a character yields column+1. If that column isn't on
+                        // a word char, fall back to column-1 (the char to the left of
+                        // the caret) which is standard editor behaviour.
+                        var clickPos = pos;
+                        string clickLine = _controller.Document.GetLine(pos.Line);
+                        if (clickLine.Length > 0 && pos.Column > 0 && pos.Column <= clickLine.Length)
+                        {
+                            int col = pos.Column;
+                            bool curIsWord = col < clickLine.Length && EditorController.IsWordChar(clickLine[col]);
+                            if (!curIsWord && EditorController.IsWordChar(clickLine[col - 1]))
+                                clickPos = new TextPosition(pos.Line, col - 1);
+                        }
+
+                        var ctrlWordRange = _controller.GetWordBoundsAt(clickPos);
+                        if (!ctrlWordRange.IsEmpty)
+                        {
+                            int start = ctrlWordRange.Start.Column;
+                            int end = ctrlWordRange.End.Column;
+                            if (start < end && end <= clickLine.Length)
+                            {
+                                string word = clickLine.Substring(start, end - start);
+                                if (word.Length > 0 && (char.IsLetter(word[0]) || word[0] == '_'))
+                                {
+                                    _editorView.RaiseCtrlClickWord(word, pos.Line);
+                                    _editorView.Focus();
+                                    return;
+                                }
+                            }
+                        }
+                    }
                     _controller.Document.SetCursor(pos);
                     _dragAnchor = pos;
                     break;

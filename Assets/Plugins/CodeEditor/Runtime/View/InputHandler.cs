@@ -555,7 +555,7 @@ namespace CodeEditor.View
             _inputField.selectionFocusPosition = Mathf.Clamp(caretOffset, 0, _inputField.text.Length);
         }
 
-        private static bool IsCtrlHeld()
+        internal static bool IsCtrlHeld()
         {
 #if ENABLE_INPUT_SYSTEM
             var kb = Keyboard.current;

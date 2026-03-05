@@ -52,6 +52,7 @@ namespace CodeEditor.View
         private MouseHandler _mouseHandler;
         private GutterClickHandler _gutterClickHandler;
         private Image _currentLineHighlight;
+        private DefinitionFlashRenderer _definitionFlash;
         private CompletionPopup _completionPopup;
         private ICompletionProvider _completionProvider;
         private SignatureHintPopup _signatureHintPopup;
@@ -66,6 +67,7 @@ namespace CodeEditor.View
 
         public event Action<string> TextChanged;
         public event Action CtrlEnterPressed;
+        public event Action<string, int> CtrlClickWord;
 
         public string Text
         {
@@ -134,6 +136,19 @@ namespace CodeEditor.View
         public void ScrollToLine(int line)
         {
             _scrollManager?.EnsureLineVisible(line);
+        }
+
+        internal void RaiseCtrlClickWord(string word, int line)
+        {
+            CtrlClickWord?.Invoke(word, line);
+        }
+
+        public void FlashLine(int line)
+        {
+            if (_definitionFlash == null || _linePool == null) return;
+            if (line < 0 || line >= _doc.LineCount) return;
+            _scrollManager?.EnsureLineVisible(line);
+            _definitionFlash.Flash(line, _linePool.LineHeight);
         }
 
         private void Awake()
@@ -291,6 +306,22 @@ namespace CodeEditor.View
                 _currentLineHighlight = hlGo.GetComponent<Image>();
                 _currentLineHighlight.color = _currentLineHighlightColor;
                 _currentLineHighlight.raycastTarget = false;
+            }
+
+            // Initialize DefinitionFlashRenderer
+            if (_textArea != null)
+            {
+                var flashGo = new GameObject("DefinitionFlash", typeof(RectTransform), typeof(Image));
+                flashGo.transform.SetParent(_textArea, false);
+                flashGo.transform.SetAsFirstSibling();
+
+                var flashRt = flashGo.GetComponent<RectTransform>();
+                flashRt.anchorMin = new Vector2(0, 1);
+                flashRt.anchorMax = new Vector2(1, 1);
+                flashRt.pivot = new Vector2(0, 1);
+
+                _definitionFlash = flashGo.AddComponent<DefinitionFlashRenderer>();
+                _definitionFlash.Initialize();
             }
 
             // Initialize InputHandler
