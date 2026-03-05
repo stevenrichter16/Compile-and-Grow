@@ -80,6 +80,7 @@ namespace CodeEditor.Completion
             var bg = rootGo.GetComponent<Image>();
             bg.color = new Color(0.18f, 0.18f, 0.22f, 0.97f);
             bg.raycastTarget = false;
+            bg.maskable = false;
 
             // Label
             var labelGo = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -99,6 +100,7 @@ namespace CodeEditor.Completion
             _label.overflowMode = TextOverflowModes.Truncate;
             _label.richText = true;
             _label.raycastTarget = false;
+            _label.maskable = false;
             _label.margin = new Vector4(8, 2, 8, 2);
         }
     }

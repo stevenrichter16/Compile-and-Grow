@@ -398,7 +398,7 @@ namespace CodeEditor.Editor
             return new TextPosition(pos.Line, col);
         }
 
-        internal static bool IsWordChar(char c)
+        public static bool IsWordChar(char c)
         {
             return char.IsLetterOrDigit(c) || c == '_';
         }

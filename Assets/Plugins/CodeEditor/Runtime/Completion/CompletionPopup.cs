@@ -203,6 +203,7 @@ namespace CodeEditor.Completion
             var bg = rootGo.GetComponent<Image>();
             bg.color = _bgColor;
             bg.raycastTarget = true;
+            bg.maskable = false;
 
             // Scroll rect + viewport
             var viewportGo = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(Mask));
@@ -250,6 +251,7 @@ namespace CodeEditor.Completion
             var rowBg = rowGo.GetComponent<Image>();
             rowBg.color = Color.clear;
             rowBg.raycastTarget = false;
+            rowBg.maskable = false;
 
             // Kind letter (F, K, V, C, M, etc.)
             var kindGo = new GameObject("Kind", typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -263,10 +265,11 @@ namespace CodeEditor.Completion
             var kindTmp = kindGo.GetComponent<TextMeshProUGUI>();
             kindTmp.font = _font;
             kindTmp.fontSize = _fontSize;
-            kindTmp.alignment = TextAlignmentOptions.MidlineCenter;
+            kindTmp.alignment = TextAlignmentOptions.Center;
             kindTmp.enableWordWrapping = false;
             kindTmp.overflowMode = TextOverflowModes.Truncate;
             kindTmp.raycastTarget = false;
+            kindTmp.maskable = false;
 
             // Label
             var labelGo = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -285,6 +288,7 @@ namespace CodeEditor.Completion
             labelTmp.enableWordWrapping = false;
             labelTmp.overflowMode = TextOverflowModes.Truncate;
             labelTmp.raycastTarget = false;
+            labelTmp.maskable = false;
 
             // Detail (right side)
             var detailGo = new GameObject("Detail", typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -303,6 +307,7 @@ namespace CodeEditor.Completion
             detailTmp.enableWordWrapping = false;
             detailTmp.overflowMode = TextOverflowModes.Truncate;
             detailTmp.raycastTarget = false;
+            detailTmp.maskable = false;
 
             _rows.Add(new PopupRow
             {
