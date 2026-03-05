@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using CodeEditor.Completion;
 using CodeEditor.Editor;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -160,6 +161,12 @@ namespace CodeEditor.View
                     Debug.Log($"[Input] Ctrl+A (SelectAll) | {SelectionStats()} | totalLines={_controller.Document.LineCount}");
                     return;
                 }
+                if (GetKeyDown(KeyCode.Space))
+                {
+                    _editorView?.TriggerCompletion(force: true);
+                    Debug.Log("[Input] Ctrl+Space (TriggerCompletion)");
+                    return;
+                }
                 // Ctrl+= / Ctrl+- to adjust font size
                 if (_editorView != null)
                 {
@@ -178,8 +185,32 @@ namespace CodeEditor.View
                 }
             }
 
+            // ── Completion popup interception ──────────────────────────────
+            bool popupVisible = _editorView != null
+                && _editorView.CompletionPopup != null
+                && _editorView.CompletionPopup.IsVisible;
+
+            bool hintVisible = _editorView != null
+                && _editorView.SignatureHintPopup != null
+                && _editorView.SignatureHintPopup.IsVisible;
+
+            if ((popupVisible || hintVisible) && GetKeyDown(KeyCode.Escape))
+            {
+                if (popupVisible) _editorView.DismissCompletion();
+                if (hintVisible) _editorView.DismissSignatureHint();
+                Debug.Log("[Input] Escape (DismissPopups)");
+                return;
+            }
+
             if (HandleRepeatable(KeyCode.Tab))
             {
+                if (popupVisible)
+                {
+                    _editorView.CompletionPopup.AcceptSelected();
+                    SyncAndSuppressFrame();
+                    Debug.Log("[Input] Tab (AcceptCompletion)");
+                    return;
+                }
                 _controller.Tab(shift);
                 SyncAndSuppressFrame();
                 return;
@@ -189,22 +220,34 @@ namespace CodeEditor.View
             {
                 _controller.MoveCursor(MoveDirection.Left, shift, word: ctrl);
                 SyncSelectionToInputField();
+                if (popupVisible) _editorView.DismissCompletion();
                 return;
             }
             if (HandleRepeatable(KeyCode.RightArrow))
             {
                 _controller.MoveCursor(MoveDirection.Right, shift, word: ctrl);
                 SyncSelectionToInputField();
+                if (popupVisible) _editorView.DismissCompletion();
                 return;
             }
             if (HandleRepeatable(KeyCode.UpArrow))
             {
+                if (popupVisible)
+                {
+                    _editorView.CompletionPopup.MoveSelection(-1);
+                    return;
+                }
                 _controller.MoveCursor(MoveDirection.Up, shift);
                 SyncSelectionToInputField();
                 return;
             }
             if (HandleRepeatable(KeyCode.DownArrow))
             {
+                if (popupVisible)
+                {
+                    _editorView.CompletionPopup.MoveSelection(1);
+                    return;
+                }
                 _controller.MoveCursor(MoveDirection.Down, shift);
                 SyncSelectionToInputField();
                 return;
@@ -245,6 +288,9 @@ namespace CodeEditor.View
                 }
                 _controller.Backspace();
                 SyncAndSuppressFrame();
+                // Re-trigger completion/hint with updated prefix, or dismiss if prefix gone
+                if (popupVisible) _editorView.TriggerCompletion(force: false);
+                if (hintVisible) _editorView.TriggerSignatureHint();
                 return;
             }
             if (HandleRepeatable(KeyCode.Delete))
@@ -261,6 +307,14 @@ namespace CodeEditor.View
 
             if (GetKeyDown(KeyCode.Return) || GetKeyDown(KeyCode.KeypadEnter))
             {
+                if (popupVisible)
+                {
+                    _editorView.CompletionPopup.AcceptSelected();
+                    SyncAndSuppressFrame();
+                    Debug.Log("[Input] Enter (AcceptCompletion)");
+                    return;
+                }
+
                 if (ctrl)
                 {
                     CtrlEnterPressed?.Invoke();
@@ -271,6 +325,58 @@ namespace CodeEditor.View
                 _controller.Enter();
                 SyncAndSuppressFrame();
                 return;
+            }
+        }
+
+        private void NotifyCompletionAfterTyping(char lastChar)
+        {
+            if (_editorView == null) return;
+
+            bool isWordChar = char.IsLetterOrDigit(lastChar) || lastChar == '_';
+            bool isDot = lastChar == '.';
+
+            if (isDot)
+            {
+                // Dot-access: trigger immediately
+                _editorView.TriggerCompletion(force: false);
+                _editorView.DismissSignatureHint();
+            }
+            else if (lastChar == '(')
+            {
+                // Open paren: dismiss completion, show signature hint
+                _editorView.DismissCompletion();
+                _editorView.TriggerSignatureHint();
+            }
+            else if (lastChar == ')')
+            {
+                // Close paren: dismiss signature hint, re-check if we're still inside an outer call
+                _editorView.DismissSignatureHint();
+                _editorView.TriggerSignatureHint();
+            }
+            else if (lastChar == ',')
+            {
+                // Comma: update active parameter in signature hint
+                _editorView.TriggerSignatureHint();
+            }
+            else if (isWordChar)
+            {
+                // Identifier character: trigger completion if prefix is >= 2 chars,
+                // or update filter if popup is already visible
+                var (prefix, _) = _controller.GetWordPrefixAtCursor();
+                if (prefix.Length >= 2 || (_editorView.CompletionPopup != null && _editorView.CompletionPopup.IsVisible))
+                {
+                    _editorView.TriggerCompletion(force: false);
+                }
+                // Also keep signature hint updated while typing inside a call
+                if (_editorView.SignatureHintPopup != null && _editorView.SignatureHintPopup.IsVisible)
+                {
+                    _editorView.TriggerSignatureHint();
+                }
+            }
+            else
+            {
+                // Non-identifier, non-dot: dismiss completion
+                _editorView.DismissCompletion();
             }
         }
 
@@ -335,6 +441,10 @@ namespace CodeEditor.View
                             _controller.TypeCharacter(c);
 
                         SyncInputFieldFromDocument();
+
+                        // Auto-trigger completion after typing
+                        char lastChar = filtered[filtered.Length - 1];
+                        NotifyCompletionAfterTyping(lastChar);
 
                         var doc = _controller.Document;
                         string curLine = doc.GetLine(doc.Cursor.Line);
@@ -558,6 +668,8 @@ namespace CodeEditor.View
                 case KeyCode.Delete: return kb.deleteKey;
                 case KeyCode.Return: return kb.enterKey;
                 case KeyCode.KeypadEnter: return kb.numpadEnterKey;
+                case KeyCode.Escape: return kb.escapeKey;
+                case KeyCode.Space: return kb.spaceKey;
                 default: return null;
             }
         }

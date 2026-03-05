@@ -403,6 +403,64 @@ namespace CodeEditor.Editor
             return char.IsLetterOrDigit(c) || c == '_';
         }
 
+        /// <summary>
+        /// Returns the word prefix (identifier characters) immediately before the cursor column,
+        /// along with the range it spans. Used for auto-complete prefix matching.
+        /// </summary>
+        public (string Prefix, TextRange Range) GetWordPrefixAtCursor()
+        {
+            var cursor = _doc.Cursor;
+            string line = _doc.GetLine(cursor.Line);
+            int col = cursor.Column;
+            int start = col;
+            while (start > 0 && IsWordChar(line[start - 1]))
+                start--;
+            string prefix = line.Substring(start, col - start);
+            var range = new TextRange(
+                new TextPosition(cursor.Line, start),
+                new TextPosition(cursor.Line, col));
+            return (prefix, range);
+        }
+
+        /// <summary>
+        /// Checks if the character immediately before the cursor is a dot (or a dot followed by
+        /// a partial member name), and returns the receiver word before it.
+        /// </summary>
+        public (bool IsDot, string Receiver, string MemberPrefix, TextRange MemberRange) GetDotContext()
+        {
+            var cursor = _doc.Cursor;
+            string line = _doc.GetLine(cursor.Line);
+            int col = cursor.Column;
+
+            // Collect any member prefix typed after the dot
+            int memberEnd = col;
+            int memberStart = col;
+            while (memberStart > 0 && IsWordChar(line[memberStart - 1]))
+                memberStart--;
+
+            // Check for dot immediately before the member prefix
+            int dotPos = memberStart - 1;
+            if (dotPos < 0 || line[dotPos] != '.')
+                return (false, null, null, default);
+
+            // Collect the receiver word before the dot
+            int recEnd = dotPos;
+            int recStart = recEnd;
+            while (recStart > 0 && IsWordChar(line[recStart - 1]))
+                recStart--;
+
+            if (recStart == recEnd)
+                return (false, null, null, default);
+
+            string receiver = line.Substring(recStart, recEnd - recStart);
+            string memberPrefix = line.Substring(memberStart, memberEnd - memberStart);
+            var memberRange = new TextRange(
+                new TextPosition(cursor.Line, memberStart),
+                new TextPosition(cursor.Line, memberEnd));
+
+            return (true, receiver, memberPrefix, memberRange);
+        }
+
         public TextRange GetWordBoundsAt(TextPosition pos)
         {
             var p = TextOperations.ClampPosition(_doc, pos);

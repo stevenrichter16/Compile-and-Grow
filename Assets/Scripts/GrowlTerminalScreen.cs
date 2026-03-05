@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using CodeEditor.Completion;
 using CodeEditor.View;
 using GrowlLanguage.Runtime;
 
@@ -32,6 +33,8 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
         BuildLayout();
 
+        _editor.SetCompletionProvider(new GrowlCompletionProvider());
+        _editor.SetSignatureHintProvider(new GrowlSignatureHintProvider());
         _editor.CtrlEnterPressed += RunCode;
     }
 

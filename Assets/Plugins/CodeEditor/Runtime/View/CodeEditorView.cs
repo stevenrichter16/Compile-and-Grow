@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using TMPro;
 using UnityEngine.EventSystems;
 using CodeEditor.Core;
+using CodeEditor.Completion;
 using CodeEditor.Editor;
 using CodeEditor.Language;
 #if ENABLE_INPUT_SYSTEM
@@ -48,6 +49,10 @@ namespace CodeEditor.View
         private MouseHandler _mouseHandler;
         private GutterClickHandler _gutterClickHandler;
         private Image _currentLineHighlight;
+        private CompletionPopup _completionPopup;
+        private ICompletionProvider _completionProvider;
+        private SignatureHintPopup _signatureHintPopup;
+        private ISignatureHintProvider _signatureHintProvider;
         private int _lastSyncedVersion = -1;
 
         public event Action<string> TextChanged;
@@ -85,6 +90,19 @@ namespace CodeEditor.View
         {
             _controller?.SetLanguageService(service);
         }
+
+        public void SetCompletionProvider(ICompletionProvider provider)
+        {
+            _completionProvider = provider;
+        }
+
+        public void SetSignatureHintProvider(ISignatureHintProvider provider)
+        {
+            _signatureHintProvider = provider;
+        }
+
+        internal CompletionPopup CompletionPopup => _completionPopup;
+        internal SignatureHintPopup SignatureHintPopup => _signatureHintPopup;
 
         public void Focus()
         {
@@ -294,6 +312,34 @@ namespace CodeEditor.View
                 _gutterClickHandler = _gutterArea.gameObject.AddComponent<GutterClickHandler>();
                 _gutterClickHandler.Initialize(_controller, this, lh, _gutterArea);
             }
+
+            // Initialize CompletionPopup
+            if (_textArea != null)
+            {
+                var popupGo = new GameObject("CompletionPopupHost", typeof(RectTransform));
+                popupGo.transform.SetParent(_textArea, false);
+                var popupRt = popupGo.GetComponent<RectTransform>();
+                popupRt.anchorMin = Vector2.zero;
+                popupRt.anchorMax = Vector2.one;
+                popupRt.sizeDelta = Vector2.zero;
+                popupRt.anchoredPosition = Vector2.zero;
+
+                _completionPopup = popupGo.AddComponent<CompletionPopup>();
+                _completionPopup.Initialize(_textArea, _monoFont, _fontSize);
+                _completionPopup.ItemAccepted += OnCompletionAccepted;
+
+                // Signature hint tooltip (reuse same parent)
+                var hintGo = new GameObject("SignatureHintHost", typeof(RectTransform));
+                hintGo.transform.SetParent(_textArea, false);
+                var hintRt = hintGo.GetComponent<RectTransform>();
+                hintRt.anchorMin = Vector2.zero;
+                hintRt.anchorMax = Vector2.one;
+                hintRt.sizeDelta = Vector2.zero;
+                hintRt.anchoredPosition = Vector2.zero;
+
+                _signatureHintPopup = hintGo.AddComponent<SignatureHintPopup>();
+                _signatureHintPopup.Initialize(_textArea, _monoFont, _fontSize);
+            }
         }
 
         private void ApplyFontSize()
@@ -407,6 +453,104 @@ namespace CodeEditor.View
             UpdateCaret();
             UpdateSelection(first, last);
             UpdateCurrentLineHighlight();
+        }
+
+        // ── Completion ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Triggers the completion popup. Called from InputHandler on Ctrl+Space
+        /// or after typing an identifier character.
+        /// </summary>
+        public void TriggerCompletion(bool force = false)
+        {
+            if (_completionProvider == null || _completionPopup == null || _linePool == null) return;
+
+            var result = _completionProvider.GetCompletions(_doc, _doc.Cursor);
+            if (result == null || result.Items.Count == 0)
+            {
+                if (!force) _completionPopup.Hide();
+                return;
+            }
+
+            if (_completionPopup.IsVisible)
+            {
+                _completionPopup.UpdateFilter(result);
+            }
+            else
+            {
+                var caretPx = _linePool.GetPixelPosition(_doc.Cursor);
+                _completionPopup.Show(result, caretPx, _linePool.LineHeight);
+            }
+        }
+
+        /// <summary>
+        /// Dismisses the completion popup.
+        /// </summary>
+        public void DismissCompletion()
+        {
+            _completionPopup?.Hide();
+        }
+
+        /// <summary>
+        /// Shows or updates the signature hint tooltip for the function call at the cursor.
+        /// Called from InputHandler after typing '(' or ',', and during typing inside a call.
+        /// </summary>
+        public void TriggerSignatureHint()
+        {
+            if (_signatureHintProvider == null || _signatureHintPopup == null || _linePool == null) return;
+
+            int activeParam;
+            var hint = _signatureHintProvider.GetSignatureHint(_doc, _doc.Cursor, out activeParam);
+            if (hint == null)
+            {
+                _signatureHintPopup.Hide();
+                return;
+            }
+
+            if (_signatureHintPopup.IsVisible)
+            {
+                _signatureHintPopup.UpdateHint(hint, activeParam);
+            }
+            else
+            {
+                var caretPx = _linePool.GetPixelPosition(_doc.Cursor);
+                _signatureHintPopup.Show(hint, activeParam, caretPx, _linePool.LineHeight);
+            }
+        }
+
+        /// <summary>
+        /// Dismisses the signature hint tooltip.
+        /// </summary>
+        public void DismissSignatureHint()
+        {
+            _signatureHintPopup?.Hide();
+        }
+
+        private void OnCompletionAccepted(CompletionItem item)
+        {
+            if (_controller == null) return;
+
+            // Use the result captured at accept time (before Hide cleared it)
+            var result = _completionPopup?.LastAcceptedResult;
+            TextRange range;
+            if (result != null && !result.ReplacementRange.IsEmpty)
+            {
+                range = result.ReplacementRange;
+            }
+            else
+            {
+                var (_, prefixRange) = _controller.GetWordPrefixAtCursor();
+                range = prefixRange;
+            }
+
+            // Replace the prefix with the completion text
+            _doc.Delete(range);
+            _doc.Insert(range.Start, item.InsertText);
+            _doc.SetCursor(new TextPosition(range.Start.Line,
+                range.Start.Column + item.InsertText.Length));
+
+            SyncView();
+            _inputHandler?.SyncInputFieldFromDocument();
         }
 
         private void EnsureUiEventInfrastructure()
