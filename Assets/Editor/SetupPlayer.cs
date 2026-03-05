@@ -67,14 +67,6 @@ public static class SetupPlayer
             Debug.Log("[SetupPlayer] Wired codeEditorRoot -> TerminalCanvas");
         }
 
-        // Remove old GrowlTerminalOverlay from Player if present
-        var oldOverlay = player.GetComponent<GrowlTerminalOverlay>();
-        if (oldOverlay != null)
-        {
-            Object.DestroyImmediate(oldOverlay);
-            Debug.Log("[SetupPlayer] Removed old GrowlTerminalOverlay from Player.");
-        }
-
         // Add GrowlTerminalScreen to TerminalCanvas if not present
         if (canvas != null && canvas.GetComponent<GrowlTerminalScreen>() == null)
         {
