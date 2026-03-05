@@ -19,6 +19,7 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
     private CodeEditorView _editor;
     private TMP_InputField _outputInput;
+    private TMP_Text _outputTmp;
     private string _output = string.Empty;
 
     // Tick mode
@@ -28,6 +29,51 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private BiologicalContext _bioContext;
     private GrowthTickManager _tickManager;
     private TMP_Text _tickBtnLabel;
+
+    private const string DefaultProgram =
+@"class DeepRoot:
+    fn grow():
+        phase ""seedling"" (0.0, 0.3):
+            root.grow_down(2)
+            stem.grow_up(1)
+            print(""  [DeepRoot] Pushing roots deeper, stem sprouting"")
+        phase ""sustain"" (0.1, 1.0):
+            root.absorb(""water"")
+            print(""  [DeepRoot] Absorbing water through roots"")
+
+class BroadLeaf:
+    fn grow():
+        phase ""sprouting"" (0.2, 0.6):
+            leaf.grow(2)
+            stem.branch()
+            print(""  [BroadLeaf] Unfurling new leaves, branching out"")
+        phase ""photosynthesis"" (0.3, 1.0):
+            leaf.open_stomata()
+            photo.absorb_light()
+            print(""  [BroadLeaf] Stomata open, photosynthesizing"")
+
+class ThornBush:
+    fn grow():
+        phase ""defense"" (0.5, 1.0):
+            defense.grow_thorns()
+            defense.produce_toxin(""alkaloid"")
+            stem.grow_thick()
+            print(""  [ThornBush] Growing thorns, producing toxins"")
+
+fn main():
+    org_add(""maturity"", 0.05)
+    org_add(""age"", 1)
+    m = org_get(""maturity"")
+    a = org_get(""age"")
+    print(""--- Tick "" + str(a) + "" | maturity: "" + str(m) + "" ---"")
+    DeepRoot().grow()
+    BroadLeaf().grow()
+    ThornBush().grow()
+    e = org_get(""energy"")
+    h = org_get(""health"")
+    w = org_get(""water"")
+    print(""  Status: energy="" + str(e) + "" health="" + str(h) + "" water="" + str(w))
+";
 
     private void Awake()
     {
@@ -45,6 +91,12 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         _editor.SetSignatureHintProvider(new GrowlSignatureHintProvider());
         _editor.CtrlEnterPressed += RunCode;
         _editor.CtrlClickWord += OnCtrlClickWord;
+    }
+
+    private void Start()
+    {
+        if (_editor != null)
+            _editor.Text = DefaultProgram;
     }
 
     private void OnDestroy()
@@ -112,12 +164,14 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         {
             _editor.SetFontSize(_editor.FontSize - 2f);
             fontLabelTmp.text = $"{_editor.FontSize:0}pt";
+            if (_outputTmp != null) _outputTmp.fontSize = _editor.FontSize - 3f;
             _editor.Focus();
         });
         fontUpBtn.GetComponent<Button>().onClick.AddListener(() =>
         {
             _editor.SetFontSize(_editor.FontSize + 2f);
             fontLabelTmp.text = $"{_editor.FontSize:0}pt";
+            if (_outputTmp != null) _outputTmp.fontSize = _editor.FontSize - 3f;
             _editor.Focus();
         });
 
@@ -183,7 +237,8 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
         // Text child
         var outputTextGo = CreateUIObject("Text", textArea.transform);
-        var outputTmp = outputTextGo.AddComponent<TextMeshProUGUI>();
+        _outputTmp = outputTextGo.AddComponent<TextMeshProUGUI>();
+        var outputTmp = _outputTmp;
         outputTmp.fontSize = 13;
         outputTmp.fontStyle = FontStyles.Normal;
         outputTmp.color = new Color(0.75f, 0.85f, 0.75f, 1f);
