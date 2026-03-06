@@ -30,6 +30,28 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private GrowthTickManager _tickManager;
     private TMP_Text _tickBtnLabel;
 
+    // Tabs
+    private GameObject _codePanel;
+    private GameObject _plantsPanel;
+    private Image _codeTabImg;
+    private Image _plantsTabImg;
+    private TMP_Text _codeTabLabel;
+    private TMP_Text _plantsTabLabel;
+    private bool _showingPlantsTab;
+    private Transform _gridContent;
+    private readonly List<PlantCellData> _plantCells = new List<PlantCellData>();
+
+    private struct PlantCellData
+    {
+        public OrganismEntity organism;
+        public UIPlantGraphic graphic;
+        public TMP_Text nameLabel;
+        public GameObject cellRoot;
+    }
+
+    private static readonly Color TabActive = new Color(0.22f, 0.24f, 0.30f, 1f);
+    private static readonly Color TabInactive = new Color(0.14f, 0.14f, 0.17f, 1f);
+
     private const string DefaultProgram =
 @"class DeepRoot:
     fn grow():
@@ -113,9 +135,6 @@ fn main():
 
     private void BuildLayout()
     {
-        // Reorganize: CodeEditor takes top portion, toolbar + output at bottom.
-        // We create a parent panel with VerticalLayoutGroup to manage this.
-
         var canvasRt = GetComponent<RectTransform>();
 
         // --- Main panel (fills canvas with padding) ---
@@ -158,7 +177,6 @@ fn main():
         var fontLabel = CreateLabel("16pt", titleBar.transform, 13, FontStyles.Normal, width: 40, height: 26);
         var fontUpBtn = CreateButton("+", titleBar.transform, 28, 26);
 
-        // Wire font size buttons directly
         var fontLabelTmp = fontLabel.GetComponent<TMP_Text>();
         fontDownBtn.GetComponent<Button>().onClick.AddListener(() =>
         {
@@ -175,17 +193,31 @@ fn main():
             _editor.Focus();
         });
 
+        // --- Tab bar ---
+        BuildTabBar(panel.transform);
+
+        // --- Code panel (wraps editor + buttons + output) ---
+        _codePanel = CreateUIObject("CodePanel", panel.transform);
+        var codePanelVlg = _codePanel.AddComponent<VerticalLayoutGroup>();
+        codePanelVlg.spacing = 4;
+        codePanelVlg.childForceExpandWidth = true;
+        codePanelVlg.childForceExpandHeight = false;
+        codePanelVlg.childControlWidth = true;
+        codePanelVlg.childControlHeight = true;
+        var codePanelLE = _codePanel.AddComponent<LayoutElement>();
+        codePanelLE.flexibleHeight = 1;
+
         // --- Code editor (reparent existing) ---
-        _editor.transform.SetParent(panel.transform, false);
+        _editor.transform.SetParent(_codePanel.transform, false);
         var editorLE = _editor.gameObject.AddComponent<LayoutElement>();
         editorLE.flexibleHeight = 3;
         editorLE.minHeight = 120;
 
         // --- Separator ---
-        CreateSeparator(panel.transform);
+        CreateSeparator(_codePanel.transform);
 
         // --- Button bar ---
-        var buttonBar = CreateUIObject("ButtonBar", panel.transform);
+        var buttonBar = CreateUIObject("ButtonBar", _codePanel.transform);
         var barLE = buttonBar.AddComponent<LayoutElement>();
         barLE.preferredHeight = 36;
         barLE.flexibleWidth = 1;
@@ -209,14 +241,13 @@ fn main():
         tickBtn.GetComponent<Button>().onClick.AddListener(ToggleTick);
 
         // --- Separator ---
-        CreateSeparator(panel.transform);
+        CreateSeparator(_codePanel.transform);
 
         // --- Output label ---
-        CreateLabel("Output", panel.transform, 14, FontStyles.Bold, height: 20);
+        CreateLabel("Output", _codePanel.transform, 14, FontStyles.Bold, height: 20);
 
         // --- Output (read-only, selectable TMP_InputField) ---
-        var outputArea = CreateUIObject("OutputArea", panel.transform);
-        // Deactivate before adding TMP_InputField so OnEnable runs after configuration
+        var outputArea = CreateUIObject("OutputArea", _codePanel.transform);
         outputArea.SetActive(false);
 
         var outputLE = outputArea.AddComponent<LayoutElement>();
@@ -227,7 +258,6 @@ fn main():
         outputImg.color = new Color(0.09f, 0.09f, 0.11f, 1f);
         outputImg.raycastTarget = true;
 
-        // Text Area child (viewport with mask)
         var textArea = CreateUIObject("Text Area", outputArea.transform);
         var textAreaRt = textArea.GetComponent<RectTransform>();
         Stretch(textAreaRt);
@@ -235,7 +265,6 @@ fn main():
         textAreaRt.offsetMax = new Vector2(-6, -4);
         textArea.AddComponent<RectMask2D>();
 
-        // Text child
         var outputTextGo = CreateUIObject("Text", textArea.transform);
         _outputTmp = outputTextGo.AddComponent<TextMeshProUGUI>();
         var outputTmp = _outputTmp;
@@ -248,7 +277,6 @@ fn main():
         var outputTmpRt = outputTextGo.GetComponent<RectTransform>();
         Stretch(outputTmpRt);
 
-        // Wire up TMP_InputField — all properties set before reactivation
         _outputInput = outputArea.AddComponent<TMP_InputField>();
         _outputInput.textComponent = outputTmp;
         _outputInput.textViewport = textAreaRt;
@@ -261,55 +289,250 @@ fn main():
         _outputInput.caretWidth = 0;
         _outputInput.text = "(no output)";
 
-        // Now activate — OnEnable runs with everything properly configured
         outputArea.SetActive(true);
+
+        // --- Plants panel (hidden by default) ---
+        BuildPlantsPanel(panel.transform);
 
         // --- Footer ---
         CreateLabel("T to open  |  Esc to close  |  Ctrl+Enter to run", panel.transform, 11, FontStyles.Italic, height: 18, color: new Color(1, 1, 1, 0.35f));
+
+        // Start on Code tab
+        SwitchTab(false);
+    }
+
+    private void BuildTabBar(Transform parent)
+    {
+        var tabBar = CreateUIObject("TabBar", parent);
+        var tabBarLE = tabBar.AddComponent<LayoutElement>();
+        tabBarLE.preferredHeight = 30;
+        tabBarLE.flexibleWidth = 1;
+
+        var tabHlg = tabBar.AddComponent<HorizontalLayoutGroup>();
+        tabHlg.spacing = 2;
+        tabHlg.childAlignment = TextAnchor.MiddleLeft;
+        tabHlg.childForceExpandWidth = false;
+        tabHlg.childForceExpandHeight = true;
+        tabHlg.childControlWidth = true;
+        tabHlg.childControlHeight = true;
+
+        // Code tab
+        var codeTab = CreateTabButton("Code", tabBar.transform);
+        _codeTabImg = codeTab.GetComponent<Image>();
+        _codeTabLabel = codeTab.GetComponentInChildren<TMP_Text>();
+        codeTab.GetComponent<Button>().onClick.AddListener(() => SwitchTab(false));
+
+        // Plants tab
+        var plantsTab = CreateTabButton("Plants", tabBar.transform);
+        _plantsTabImg = plantsTab.GetComponent<Image>();
+        _plantsTabLabel = plantsTab.GetComponentInChildren<TMP_Text>();
+        plantsTab.GetComponent<Button>().onClick.AddListener(() => SwitchTab(true));
+    }
+
+    private static GameObject CreateTabButton(string label, Transform parent)
+    {
+        var go = CreateUIObject("Tab_" + label, parent);
+
+        var img = go.AddComponent<Image>();
+        img.color = TabInactive;
+
+        var btn = go.AddComponent<Button>();
+        var colors = btn.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1f, 1f, 1f, 0.9f);
+        colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+        btn.colors = colors;
+
+        var textGo = CreateUIObject("Text", go.transform);
+        var tmp = textGo.AddComponent<TextMeshProUGUI>();
+        tmp.text = label;
+        tmp.fontSize = 13;
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.color = new Color(0.7f, 0.7f, 0.75f, 1f);
+        Stretch(textGo.GetComponent<RectTransform>());
+
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredWidth = 80;
+        le.flexibleHeight = 1;
+
+        return go;
+    }
+
+    private void BuildPlantsPanel(Transform parent)
+    {
+        _plantsPanel = CreateUIObject("PlantsPanel", parent);
+        var plantsPanelLE = _plantsPanel.AddComponent<LayoutElement>();
+        plantsPanelLE.flexibleHeight = 1;
+
+        // ScrollRect
+        var scrollRect = _plantsPanel.AddComponent<ScrollRect>();
+        scrollRect.horizontal = false;
+        scrollRect.vertical = true;
+        scrollRect.movementType = ScrollRect.MovementType.Clamped;
+
+        // Viewport
+        var viewport = CreateUIObject("Viewport", _plantsPanel.transform);
+        var viewportRt = viewport.GetComponent<RectTransform>();
+        Stretch(viewportRt);
+        viewport.AddComponent<RectMask2D>();
+        var viewportImg = viewport.AddComponent<Image>();
+        viewportImg.color = new Color(0.09f, 0.09f, 0.11f, 1f);
+
+        // Content
+        var content = CreateUIObject("Content", viewport.transform);
+        var contentRt = content.GetComponent<RectTransform>();
+        contentRt.anchorMin = new Vector2(0, 1);
+        contentRt.anchorMax = new Vector2(1, 1);
+        contentRt.pivot = new Vector2(0.5f, 1);
+        contentRt.sizeDelta = new Vector2(0, 0);
+
+        var grid = content.AddComponent<GridLayoutGroup>();
+        grid.cellSize = new Vector2(160, 180);
+        grid.spacing = new Vector2(8, 8);
+        grid.padding = new RectOffset(8, 8, 8, 8);
+        grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+        grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+        grid.childAlignment = TextAnchor.UpperLeft;
+        grid.constraint = GridLayoutGroup.Constraint.Flexible;
+
+        var csf = content.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        scrollRect.viewport = viewportRt;
+        scrollRect.content = contentRt;
+
+        _gridContent = content.transform;
+    }
+
+    private void SwitchTab(bool showPlants)
+    {
+        _showingPlantsTab = showPlants;
+        _codePanel.SetActive(!showPlants);
+        _plantsPanel.SetActive(showPlants);
+
+        _codeTabImg.color = showPlants ? TabInactive : TabActive;
+        _plantsTabImg.color = showPlants ? TabActive : TabInactive;
+
+        _codeTabLabel.fontStyle = showPlants ? FontStyles.Normal : FontStyles.Bold;
+        _plantsTabLabel.fontStyle = showPlants ? FontStyles.Bold : FontStyles.Normal;
+
+        _codeTabLabel.color = showPlants
+            ? new Color(0.7f, 0.7f, 0.75f, 1f)
+            : new Color(0.9f, 0.9f, 0.95f, 1f);
+        _plantsTabLabel.color = showPlants
+            ? new Color(0.9f, 0.9f, 0.95f, 1f)
+            : new Color(0.7f, 0.7f, 0.75f, 1f);
+
+        if (showPlants)
+            RefreshPlantsGrid();
+    }
+
+    private void RefreshPlantsGrid()
+    {
+        var organisms = FindObjectsOfType<OrganismEntity>();
+
+        // Build set of current organism instance IDs
+        var currentIds = new HashSet<int>();
+        for (int i = 0; i < organisms.Length; i++)
+            currentIds.Add(organisms[i].GetInstanceID());
+
+        // Remove stale cells (destroyed organisms)
+        for (int i = _plantCells.Count - 1; i >= 0; i--)
+        {
+            if (_plantCells[i].organism == null || !currentIds.Contains(_plantCells[i].organism.GetInstanceID()))
+            {
+                if (_plantCells[i].cellRoot != null)
+                    Destroy(_plantCells[i].cellRoot);
+                _plantCells.RemoveAt(i);
+            }
+        }
+
+        // Build set of existing cell organism IDs
+        var existingIds = new HashSet<int>();
+        for (int i = 0; i < _plantCells.Count; i++)
+            existingIds.Add(_plantCells[i].organism.GetInstanceID());
+
+        // Add new cells
+        for (int i = 0; i < organisms.Length; i++)
+        {
+            if (!existingIds.Contains(organisms[i].GetInstanceID()))
+            {
+                var cell = CreatePlantCell(organisms[i]);
+                _plantCells.Add(cell);
+            }
+        }
+
+        // Refresh all graphics
+        for (int i = 0; i < _plantCells.Count; i++)
+        {
+            var cell = _plantCells[i];
+            if (cell.organism != null)
+            {
+                cell.graphic.SetBody(cell.organism.Body);
+                cell.graphic.Refresh();
+                cell.nameLabel.text = cell.organism.OrganismName ?? "Unnamed";
+            }
+        }
+    }
+
+    private PlantCellData CreatePlantCell(OrganismEntity organism)
+    {
+        var cellGo = CreateUIObject("PlantCell", _gridContent);
+
+        var bgImg = cellGo.AddComponent<Image>();
+        bgImg.color = new Color(0.1f, 0.1f, 0.12f, 1f);
+        bgImg.raycastTarget = false;
+
+        var cellVlg = cellGo.AddComponent<VerticalLayoutGroup>();
+        cellVlg.spacing = 2;
+        cellVlg.padding = new RectOffset(4, 4, 4, 4);
+        cellVlg.childForceExpandWidth = true;
+        cellVlg.childForceExpandHeight = false;
+        cellVlg.childControlWidth = true;
+        cellVlg.childControlHeight = true;
+
+        // Plant graphic
+        var graphicGo = CreateUIObject("PlantGraphic", cellGo.transform);
+        graphicGo.AddComponent<CanvasRenderer>();
+        var graphic = graphicGo.AddComponent<UIPlantGraphic>();
+        graphic.raycastTarget = false;
+        var graphicLE = graphicGo.AddComponent<LayoutElement>();
+        graphicLE.flexibleHeight = 1;
+        graphicLE.minHeight = 120;
+
+        // Name label
+        var labelGo = CreateUIObject("NameLabel", cellGo.transform);
+        var nameLabel = labelGo.AddComponent<TextMeshProUGUI>();
+        nameLabel.text = organism.OrganismName ?? "Unnamed";
+        nameLabel.fontSize = 11;
+        nameLabel.fontStyle = FontStyles.Normal;
+        nameLabel.color = new Color(0.7f, 0.8f, 0.7f, 1f);
+        nameLabel.alignment = TextAlignmentOptions.Center;
+        nameLabel.enableWordWrapping = false;
+        nameLabel.overflowMode = TextOverflowModes.Ellipsis;
+        var nameLabelLE = labelGo.AddComponent<LayoutElement>();
+        nameLabelLE.preferredHeight = 20;
+
+        graphic.SetBody(organism.Body);
+
+        return new PlantCellData
+        {
+            organism = organism,
+            graphic = graphic,
+            nameLabel = nameLabel,
+            cellRoot = cellGo
+        };
     }
 
     private void RunCode()
     {
         if (_editor == null) return;
 
-        string source = _editor.Text;
-        IGrowlRuntimeHost host = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+        // If already ticking, stop and restart with fresh state
+        if (_ticking)
+            StopTicking();
 
-        RuntimeResult result = GrowlRuntime.Execute(source, new RuntimeOptions
-        {
-            AutoInvokeEntryFunction = autoInvokeEntryFunction,
-            EntryFunctionName = entryFunctionName,
-            MaxLoopIterations = maxLoopIterations,
-            Host = host,
-        });
-
-        var lines = new List<string>();
-
-        if (result.Messages.Count > 0)
-        {
-            lines.Add("<color=#FF6666>Errors:</color>");
-            for (int i = 0; i < result.Messages.Count; i++)
-                lines.Add(result.Messages[i].ToString());
-        }
-
-        if (result.OutputLines.Count > 0)
-        {
-            if (lines.Count > 0) lines.Add("");
-            lines.Add("<color=#66CCFF>Output:</color>");
-            for (int i = 0; i < result.OutputLines.Count; i++)
-                lines.Add(result.OutputLines[i]);
-        }
-
-        if (result.Success)
-        {
-            if (lines.Count > 0) lines.Add("");
-            lines.Add("<color=#88FF88>Result:</color>");
-            lines.Add(RuntimeValueFormatter.Format(result.LastValue));
-        }
-
-        _output = lines.Count == 0 ? "(no output)" : string.Join("\n", lines);
-        if (_outputInput != null)
-            _outputInput.text = _output;
+        StartTicking();
     }
 
     private void ClearOutput()
@@ -339,10 +562,12 @@ fn main():
             return;
         }
 
-        // Create sandbox organism for the bridge to operate on
-        var sandboxGo = new GameObject("[TerminalSandboxOrganism]");
+        // Create organism for the terminal code to operate on
+        string orgName = ExtractOrganismName(_editor.Text);
+        var sandboxGo = new GameObject("[Terminal:" + orgName + "]");
         sandboxGo.hideFlags = HideFlags.HideInHierarchy;
         _sandboxOrganism = sandboxGo.AddComponent<OrganismEntity>();
+        _sandboxOrganism.TrySetState("name", orgName, out _);
 
         _bioContext = new BiologicalContext();
         _tickCount = 0;
@@ -410,6 +635,10 @@ fn main():
             _output += string.Join("\n", lines) + "\n";
             if (_outputInput != null) _outputInput.text = _output;
         }
+
+        // Refresh plants grid if visible
+        if (_showingPlantsTab && _plantsPanel.activeSelf)
+            RefreshPlantsGrid();
     }
 
     // --- Go-to-definition ---
@@ -525,6 +754,22 @@ fn main():
             return true;
         }
         return false;
+    }
+
+    private static string ExtractOrganismName(string source)
+    {
+        if (string.IsNullOrEmpty(source)) return "Terminal";
+        string[] lines = source.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string trimmed = lines[i].TrimStart();
+            if (trimmed.StartsWith("class "))
+            {
+                string name = ExtractIdentifier(trimmed, 6);
+                if (!string.IsNullOrEmpty(name)) return name;
+            }
+        }
+        return "Terminal";
     }
 
     // --- UI helpers ---

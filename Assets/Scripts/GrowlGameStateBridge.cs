@@ -2099,8 +2099,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     {
         resourceGrid = ResolveSystem(resourceGrid);
         growthTickManager = ResolveSystem(growthTickManager);
-        organismEntity = ResolveSystem(organismEntity);
         seedInventory = ResolveSystem(seedInventory);
+        // organismEntity is set dynamically via SetOrganism(), not auto-resolved
     }
 
     private bool TryValidateSystems(out string errorMessage)
@@ -2114,12 +2114,6 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         if (growthTickManager == null)
         {
             errorMessage = "GrowlGameStateBridge requires GrowthTickManager.";
-            return false;
-        }
-
-        if (organismEntity == null)
-        {
-            errorMessage = "GrowlGameStateBridge requires OrganismEntity.";
             return false;
         }
 
