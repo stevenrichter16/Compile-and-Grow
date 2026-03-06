@@ -1568,7 +1568,7 @@ namespace GrowlLanguage.Parser
                         continue;
                     }
 
-                    if (Check(TokenType.Identifier) && CheckNext(TokenType.Colon))
+                    if (IsMemberNameToken(Current().Type) && CheckNext(TokenType.Colon))
                     {
                         Token name = Advance();
                         Consume(TokenType.Colon, "Expected ':' after named argument.");

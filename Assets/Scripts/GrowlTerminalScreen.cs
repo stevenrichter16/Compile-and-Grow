@@ -5,6 +5,9 @@ using TMPro;
 using CodeEditor.Completion;
 using CodeEditor.View;
 using GrowlLanguage.Runtime;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 /// <summary>
 /// Builds the toolbar (Run, Clear, font size) and output panel around a CodeEditorView.
@@ -30,6 +33,18 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private GrowthTickManager _tickManager;
     private TMP_Text _tickBtnLabel;
 
+    // Detail overlay
+    private GameObject _detailOverlay;
+    private UIPlantGraphic _detailGraphic;
+    private TMP_Text _detailNameLabel;
+    private OrganismEntity _detailOrganism;
+    private Transform _partsListContent;
+    private ResourceGrid _resourceGrid;
+    private TMP_Text _detailIOText;
+    private TMP_Text _detailEnvText;
+
+    public bool IsDetailOverlayOpen => _detailOverlay != null && _detailOverlay.activeSelf;
+
     // Tabs
     private GameObject _codePanel;
     private GameObject _plantsPanel;
@@ -53,34 +68,103 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private static readonly Color TabInactive = new Color(0.14f, 0.14f, 0.17f, 1f);
 
     private const string DefaultProgram =
-@"class DeepRoot:
-    fn grow():
-        phase ""seedling"" (0.0, 0.3):
-            root.grow_down(2)
-            stem.grow_up(1)
-            print(""  [DeepRoot] Pushing roots deeper, stem sprouting"")
-        phase ""sustain"" (0.1, 1.0):
-            root.absorb(""water"")
-            print(""  [DeepRoot] Absorbing water through roots"")
+@"# Thornveil — A fortified swamp organism
+# Uses classes, phases, adapt, when/then, cycles, and tickers
 
-class BroadLeaf:
-    fn grow():
-        phase ""sprouting"" (0.2, 0.6):
-            leaf.grow(2)
-            stem.branch()
-            print(""  [BroadLeaf] Unfurling new leaves, branching out"")
-        phase ""photosynthesis"" (0.3, 1.0):
-            leaf.open_stomata()
-            photo.absorb_light()
-            print(""  [BroadLeaf] Stomata open, photosynthesizing"")
+struct DefenseConfig:
+    sharpness: float = 0.9
+    density: float = 0.7
+    toxin_potency: float = 0.8
+    armor_thickness: float = 2.0
 
-class ThornBush:
-    fn grow():
-        phase ""defense"" (0.5, 1.0):
-            defense.grow_thorns()
-            defense.produce_toxin(""alkaloid"")
-            stem.grow_thick()
-            print(""  [ThornBush] Growing thorns, producing toxins"")
+class ThornveilState:
+    fn new():
+        self.config = DefenseConfig()
+        self.water_stressed = false
+        self.leaves_deployed = 0
+        self.defense_active = false
+
+    fn deploy_leaves(count, size):
+        i = 0
+        while i < count:
+            leaf.grow(size)
+            i += 1
+        self.leaves_deployed += count
+
+    fn fortify_stem(part_name):
+        defense.grow_thorns(part_name, self.config.sharpness, self.config.density)
+        defense.grow_armor(part_name, self.config.armor_thickness)
+        self.defense_active = true
+
+    fn apply_toxins():
+        defense.produce_toxin(""alkaloid"", self.config.toxin_potency, ""leaf"")
+
+STATE = ThornveilState()
+
+@role(""intake"")
+fn intake(org, env):
+    root.grow_down(3)
+    root.grow_wide(4)
+    root.branch(3)
+    root.absorb(""water"")
+    root.absorb(""nitrogen"")
+    root.set_absorption_rate(""water"", 0.8)
+    root.anchor(0.9)
+    leaf.absorb_moisture()
+    leaf.absorb_chemical(""co2"")
+
+@role(""structure"")
+fn structure(org, env):
+    phase ""seedling""(0, 0.2):
+        stem.grow_up(2)
+        stem.set_rigidity(0.4)
+        stem.set_material(""fibrous"")
+
+    phase ""vegetative""(0.2, 0.6):
+        stem.grow_up(3)
+        stem.grow_thick(1)
+        stem.branch(3)
+        stem.grow_segment(length: 2, angle: -45)
+        stem.grow_segment(length: 1.5, angle: 30)
+        stem.set_rigidity(0.85)
+        stem.produce_bark()
+
+    phase ""mature""(0.6, 1.0):
+        stem.produce_wax()
+        stem.heal(""*"", 0.5)
+
+@role(""energy"")
+fn energy(org, env):
+    photo.absorb_light()
+    photo.set_pigment(""chlorophyll-b"")
+    photo.boost_chlorophyll()
+    photo.set_metabolism(1.3)
+    photo.store_energy(5, location: ""stem"")
+
+@role(""output"")
+fn output(org, env):
+    phase ""seedling""(0, 0.2):
+        STATE.deploy_leaves(2, 3)
+        leaf.set_coating(""waxy"")
+
+    phase ""vegetative""(0.2, 0.6):
+        STATE.deploy_leaves(4, 2)
+        leaf.grow(6)
+        leaf.set_color(0.15, 0.55, 0.2)
+        leaf.open_stomata(0.7)
+        leaf.track_light(true)
+        leaf.set_lifespan(80)
+        leaf.reshape(""leaf_1"", ""serrated"")
+        STATE.fortify_stem(""stem_main"")
+        STATE.apply_toxins()
+        defense.sticky_trap(""leaf_1"", 0.6)
+        defense.grow_camouflage(""vegetation"")
+
+    phase ""mature""(0.6, 1.0):
+        defense.resist_disease(""fungal"", 0.7)
+
+    o2 = synthesize(base: ""chemical"", type: ""oxygen"")
+    emit(o2, 0.1)
 
 fn main():
     org_add(""maturity"", 0.05)
@@ -88,9 +172,28 @@ fn main():
     m = org_get(""maturity"")
     a = org_get(""age"")
     print(""--- Tick "" + str(a) + "" | maturity: "" + str(m) + "" ---"")
-    DeepRoot().grow()
-    BroadLeaf().grow()
-    ThornBush().grow()
+
+    intake(none, none)
+    structure(none, none)
+    energy(none, none)
+    output(none, none)
+
+    when org.water < 0.15:
+        leaf.close_stomata()
+        root.grow_toward(""water"", 5)
+    then when org.water >= 0.4:
+        leaf.open_stomata(0.8)
+
+    cycle ""maintenance"" period 20:
+        at 0:
+            root.absorb(""water"")
+            root.absorb(""nitrogen"")
+        at 10:
+            stem.heal(""*"", 0.3)
+
+    ticker ""status"" every 10 ticks:
+        leaf.absorb_moisture()
+
     e = org_get(""energy"")
     h = org_get(""health"")
     w = org_get(""water"")
@@ -297,6 +400,9 @@ fn main():
         // --- Footer ---
         CreateLabel("T to open  |  Esc to close  |  Ctrl+Enter to run", panel.transform, 11, FontStyles.Italic, height: 18, color: new Color(1, 1, 1, 0.35f));
 
+        // --- Detail overlay (sibling of Panel, not inside PlantsPanel) ---
+        BuildDetailOverlay(transform);
+
         // Start on Code tab
         SwitchTab(false);
     }
@@ -404,6 +510,205 @@ fn main():
         _gridContent = content.transform;
     }
 
+    private void BuildDetailOverlay(Transform parent)
+    {
+        _detailOverlay = CreateUIObject("DetailOverlay", parent);
+        var overlayRt = _detailOverlay.GetComponent<RectTransform>();
+        Stretch(overlayRt);
+
+        // Dim background (click to close)
+        var dimGo = CreateUIObject("DimBackground", _detailOverlay.transform);
+        var dimRt = dimGo.GetComponent<RectTransform>();
+        Stretch(dimRt);
+        var dimImg = dimGo.AddComponent<Image>();
+        dimImg.color = new Color(0f, 0f, 0f, 0.7f);
+        dimImg.raycastTarget = true;
+        var dimBtn = dimGo.AddComponent<Button>();
+        dimBtn.transition = Selectable.Transition.None;
+        dimBtn.onClick.AddListener(HidePlantDetail);
+
+        // Detail panel (~70% centered)
+        var detailPanel = CreateUIObject("DetailPanel", _detailOverlay.transform);
+        var detailRt = detailPanel.GetComponent<RectTransform>();
+        detailRt.anchorMin = new Vector2(0.15f, 0.1f);
+        detailRt.anchorMax = new Vector2(0.85f, 0.9f);
+        detailRt.sizeDelta = Vector2.zero;
+        detailRt.anchoredPosition = Vector2.zero;
+
+        var detailBg = detailPanel.AddComponent<Image>();
+        detailBg.color = new Color(0.1f, 0.1f, 0.12f, 1f);
+        detailBg.raycastTarget = true;
+
+        var detailVlg = detailPanel.AddComponent<VerticalLayoutGroup>();
+        detailVlg.spacing = 4;
+        detailVlg.padding = new RectOffset(12, 12, 8, 12);
+        detailVlg.childForceExpandWidth = true;
+        detailVlg.childForceExpandHeight = false;
+        detailVlg.childControlWidth = true;
+        detailVlg.childControlHeight = true;
+
+        // Header bar
+        var headerBar = CreateUIObject("HeaderBar", detailPanel.transform);
+        var headerLE = headerBar.AddComponent<LayoutElement>();
+        headerLE.preferredHeight = 32;
+        headerLE.flexibleWidth = 1;
+
+        var headerHlg = headerBar.AddComponent<HorizontalLayoutGroup>();
+        headerHlg.spacing = 8;
+        headerHlg.childAlignment = TextAnchor.MiddleLeft;
+        headerHlg.childForceExpandWidth = false;
+        headerHlg.childForceExpandHeight = false;
+        headerHlg.childControlWidth = true;
+        headerHlg.childControlHeight = true;
+
+        var nameLabelGo = CreateLabel("Unnamed", headerBar.transform, 16, FontStyles.Bold, flexWidth: 1f);
+        _detailNameLabel = nameLabelGo.GetComponent<TMP_Text>();
+
+        var closeBtn = CreateButton("X", headerBar.transform, 32, 28);
+        closeBtn.GetComponent<Button>().onClick.AddListener(HidePlantDetail);
+
+        // Content area (two-column: graphic left, parts list right)
+        var contentArea = CreateUIObject("ContentArea", detailPanel.transform);
+        var contentAreaHlg = contentArea.AddComponent<HorizontalLayoutGroup>();
+        contentAreaHlg.spacing = 8;
+        contentAreaHlg.childForceExpandWidth = false;
+        contentAreaHlg.childForceExpandHeight = true;
+        contentAreaHlg.childControlWidth = true;
+        contentAreaHlg.childControlHeight = true;
+        var contentAreaLE = contentArea.AddComponent<LayoutElement>();
+        contentAreaLE.flexibleHeight = 1;
+
+        // Left: Plant graphic
+        var graphicGo = CreateUIObject("DetailPlantGraphic", contentArea.transform);
+        graphicGo.AddComponent<CanvasRenderer>();
+        _detailGraphic = graphicGo.AddComponent<UIPlantGraphic>();
+        _detailGraphic.raycastTarget = true;
+        var graphicLE = graphicGo.AddComponent<LayoutElement>();
+        graphicLE.flexibleWidth = 3;
+        graphicLE.flexibleHeight = 1;
+        graphicLE.minHeight = 200;
+
+        // Right: Parts list panel
+        var partsPanel = CreateUIObject("PartsListPanel", contentArea.transform);
+        var partsPanelImg = partsPanel.AddComponent<Image>();
+        partsPanelImg.color = new Color(0.08f, 0.08f, 0.1f, 1f);
+        partsPanelImg.raycastTarget = true;
+        var partsPanelVlg = partsPanel.AddComponent<VerticalLayoutGroup>();
+        partsPanelVlg.spacing = 4;
+        partsPanelVlg.padding = new RectOffset(8, 8, 8, 8);
+        partsPanelVlg.childForceExpandWidth = true;
+        partsPanelVlg.childForceExpandHeight = false;
+        partsPanelVlg.childControlWidth = true;
+        partsPanelVlg.childControlHeight = true;
+        var partsPanelLE = partsPanel.AddComponent<LayoutElement>();
+        partsPanelLE.flexibleWidth = 2;
+
+        // "Parts" header
+        CreateLabel("Parts", partsPanel.transform, 12, FontStyles.Bold, height: 18,
+            color: new Color(0.5f, 0.55f, 0.5f, 1f));
+
+        // Separator
+        CreateSeparator(partsPanel.transform);
+
+        // ScrollRect for parts list
+        var partsScrollGo = CreateUIObject("PartsScroll", partsPanel.transform);
+        var partsScrollRect = partsScrollGo.AddComponent<ScrollRect>();
+        partsScrollRect.horizontal = false;
+        partsScrollRect.vertical = true;
+        partsScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        var partsScrollLE = partsScrollGo.AddComponent<LayoutElement>();
+        partsScrollLE.flexibleHeight = 1;
+
+        // Viewport
+        var partsViewport = CreateUIObject("Viewport", partsScrollGo.transform);
+        var partsViewportRt = partsViewport.GetComponent<RectTransform>();
+        Stretch(partsViewportRt);
+        partsViewport.AddComponent<RectMask2D>();
+
+        // Content
+        var partsContent = CreateUIObject("Content", partsViewport.transform);
+        var partsContentRt = partsContent.GetComponent<RectTransform>();
+        partsContentRt.anchorMin = new Vector2(0, 1);
+        partsContentRt.anchorMax = new Vector2(1, 1);
+        partsContentRt.pivot = new Vector2(0.5f, 1);
+        partsContentRt.sizeDelta = Vector2.zero;
+
+        var partsContentVlg = partsContent.AddComponent<VerticalLayoutGroup>();
+        partsContentVlg.spacing = 2;
+        partsContentVlg.padding = new RectOffset(4, 4, 4, 4);
+        partsContentVlg.childForceExpandWidth = true;
+        partsContentVlg.childForceExpandHeight = false;
+        partsContentVlg.childControlWidth = true;
+        partsContentVlg.childControlHeight = true;
+
+        var partsContentCsf = partsContent.AddComponent<ContentSizeFitter>();
+        partsContentCsf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        partsScrollRect.viewport = partsViewportRt;
+        partsScrollRect.content = partsContentRt;
+
+        _partsListContent = partsContent.transform;
+
+        // --- Organism I/O section ---
+        CreateSeparator(partsPanel.transform);
+        CreateLabel("Organism I/O", partsPanel.transform, 12, FontStyles.Bold, height: 18,
+            color: new Color(0.5f, 0.55f, 0.5f, 1f));
+
+        var ioGo = CreateUIObject("DetailIOText", partsPanel.transform);
+        _detailIOText = ioGo.AddComponent<TextMeshProUGUI>();
+        _detailIOText.fontSize = 10;
+        _detailIOText.fontStyle = FontStyles.Normal;
+        _detailIOText.color = new Color(0.75f, 0.8f, 0.75f, 1f);
+        _detailIOText.enableWordWrapping = true;
+        _detailIOText.richText = true;
+        _detailIOText.raycastTarget = false;
+        var ioLE = ioGo.AddComponent<LayoutElement>();
+        ioLE.flexibleWidth = 1;
+        ioLE.preferredHeight = 80;
+
+        // --- Environment section ---
+        CreateSeparator(partsPanel.transform);
+        CreateLabel("Environment", partsPanel.transform, 12, FontStyles.Bold, height: 18,
+            color: new Color(0.5f, 0.55f, 0.5f, 1f));
+
+        var envGo = CreateUIObject("DetailEnvText", partsPanel.transform);
+        _detailEnvText = envGo.AddComponent<TextMeshProUGUI>();
+        _detailEnvText.fontSize = 10;
+        _detailEnvText.fontStyle = FontStyles.Normal;
+        _detailEnvText.color = new Color(0.75f, 0.8f, 0.75f, 1f);
+        _detailEnvText.enableWordWrapping = true;
+        _detailEnvText.richText = true;
+        _detailEnvText.raycastTarget = false;
+        var envLE = envGo.AddComponent<LayoutElement>();
+        envLE.flexibleWidth = 1;
+        envLE.preferredHeight = 80;
+
+        _detailOverlay.SetActive(false);
+    }
+
+    private void ShowPlantDetail(OrganismEntity organism)
+    {
+        _detailOrganism = organism;
+        _detailGraphic.SetBody(organism.Body);
+        _detailGraphic.Refresh();
+        _detailNameLabel.text = organism.OrganismName ?? "Unnamed";
+        RefreshPartsList();
+        RefreshDetailInfo();
+        _detailOverlay.SetActive(true);
+    }
+
+    private void HidePlantDetail()
+    {
+        _detailOverlay.SetActive(false);
+        _detailOrganism = null;
+    }
+
+    private void Update()
+    {
+        if (IsDetailOverlayOpen && IsEscapePressed())
+            HidePlantDetail();
+    }
+
     private void SwitchTab(bool showPlants)
     {
         _showingPlantsTab = showPlants;
@@ -481,7 +786,16 @@ fn main():
 
         var bgImg = cellGo.AddComponent<Image>();
         bgImg.color = new Color(0.1f, 0.1f, 0.12f, 1f);
-        bgImg.raycastTarget = false;
+        bgImg.raycastTarget = true;
+
+        var cellBtn = cellGo.AddComponent<Button>();
+        var cellBtnColors = cellBtn.colors;
+        cellBtnColors.normalColor = Color.white;
+        cellBtnColors.highlightedColor = new Color(1f, 1f, 1f, 0.85f);
+        cellBtnColors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+        cellBtn.colors = cellBtnColors;
+        var capturedOrganism = organism;
+        cellBtn.onClick.AddListener(() => ShowPlantDetail(capturedOrganism));
 
         var cellVlg = cellGo.AddComponent<VerticalLayoutGroup>();
         cellVlg.spacing = 2;
@@ -639,6 +953,190 @@ fn main():
         // Refresh plants grid if visible
         if (_showingPlantsTab && _plantsPanel.activeSelf)
             RefreshPlantsGrid();
+
+        // Refresh detail overlay if open
+        if (IsDetailOverlayOpen && _detailOrganism != null)
+        {
+            _detailGraphic.SetBody(_detailOrganism.Body);
+            _detailGraphic.Refresh();
+            RefreshPartsList();
+            RefreshDetailInfo();
+        }
+    }
+
+    // --- Parts list ---
+
+    private void RefreshPartsList()
+    {
+        if (_partsListContent == null || _detailOrganism == null) return;
+
+        // Clear existing rows
+        for (int i = _partsListContent.childCount - 1; i >= 0; i--)
+            Destroy(_partsListContent.GetChild(i).gameObject);
+
+        var parts = _detailOrganism.Body.Parts;
+        for (int i = 0; i < parts.Count; i++)
+            CreatePartRow(parts[i]);
+    }
+
+    private void RefreshDetailInfo()
+    {
+        if (_detailOrganism == null) return;
+
+        // --- Organism I/O ---
+        if (_detailIOText != null)
+        {
+            var snap = _detailOrganism.CreateStateSnapshot();
+            var sb = new System.Text.StringBuilder();
+
+            // Core stats (always present)
+            float energy = snap.ContainsKey("energy") ? System.Convert.ToSingle(snap["energy"]) : 0f;
+            float water = snap.ContainsKey("water") ? System.Convert.ToSingle(snap["water"]) : 0f;
+            float health = snap.ContainsKey("health") ? System.Convert.ToSingle(snap["health"]) : 0f;
+            float stress = snap.ContainsKey("stress") ? System.Convert.ToSingle(snap["stress"]) : 0f;
+            float maturity = snap.ContainsKey("maturity") ? System.Convert.ToSingle(snap["maturity"]) : 0f;
+            long age = snap.ContainsKey("age") ? System.Convert.ToInt64(snap["age"]) : 0;
+
+            sb.AppendLine($"energy: {energy:F1}    water: {water:F2}");
+            sb.AppendLine($"health: {health:F0}%    stress: {stress:F2}");
+            sb.Append($"maturity: {maturity:F1}    age: {age}");
+
+            // Custom/absorbed resources (skip internal complex objects)
+            var skipKeys = new HashSet<string>(System.StringComparer.Ordinal)
+                { "name", "alive", "age", "maturity", "energy", "water", "health", "stress",
+                  "memory", "parts", "morphology", "nutrients" };
+            var customEntries = new List<string>();
+            foreach (var kv in snap)
+            {
+                if (skipKeys.Contains(kv.Key)) continue;
+                if (kv.Value is System.Collections.IDictionary) continue;
+                if (kv.Value is System.Collections.IList) continue;
+                customEntries.Add($"{kv.Key}: {FormatValue(kv.Value)}");
+            }
+
+            if (customEntries.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+                sb.Append(string.Join("   ", customEntries));
+            }
+
+            _detailIOText.text = sb.ToString();
+        }
+
+        // --- Environment ---
+        if (_detailEnvText != null)
+        {
+            if (_resourceGrid == null)
+                _resourceGrid = FindObjectOfType<ResourceGrid>();
+
+            if (_resourceGrid != null)
+            {
+                var world = _resourceGrid.CreateWorldSnapshot();
+                var sb = new System.Text.StringBuilder();
+
+                // Base values
+                var baseEntries = new List<string>();
+                var groups = new Dictionary<string, List<string>>(System.StringComparer.Ordinal);
+
+                foreach (var kv in world)
+                {
+                    string key = kv.Key;
+                    int uscore = key.IndexOf('_');
+                    if (uscore > 0)
+                    {
+                        string prefix = key.Substring(0, uscore);
+                        if (!groups.ContainsKey(prefix))
+                            groups[prefix] = new List<string>();
+                        groups[prefix].Add($"{key}: {FormatValue(kv.Value)}");
+                    }
+                    else
+                    {
+                        string suffix = key == "temperature" ? "\u00b0" : "";
+                        baseEntries.Add($"{key}: {FormatValue(kv.Value)}{suffix}");
+                    }
+                }
+
+                sb.Append(string.Join("   ", baseEntries));
+
+                foreach (var g in groups)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"\u2500\u2500\u2500\u2500 {g.Key} \u2500\u2500\u2500\u2500");
+                    sb.Append(string.Join("   ", g.Value));
+                }
+
+                _detailEnvText.text = sb.ToString();
+            }
+            else
+            {
+                _detailEnvText.text = "<color=#808080>No ResourceGrid in scene</color>";
+            }
+        }
+    }
+
+    private static string FormatValue(object value)
+    {
+        if (value is float f) return f.ToString(f == (int)f ? "F0" : "F2");
+        if (value is double d) return d.ToString(d == (long)d ? "F0" : "F2");
+        return value?.ToString() ?? "null";
+    }
+
+    private void CreatePartRow(PlantPart part)
+    {
+        var row = CreateUIObject("PartRow", _partsListContent);
+        var rowImg = row.AddComponent<Image>();
+        rowImg.color = new Color(0.13f, 0.13f, 0.16f, 1f);
+        rowImg.raycastTarget = false;
+
+        var rowLE = row.AddComponent<LayoutElement>();
+        rowLE.preferredHeight = 32;
+
+        // Type dot — positioned manually at left-center
+        var dotGo = CreateUIObject("TypeDot", row.transform);
+        var dotImg = dotGo.AddComponent<Image>();
+        dotImg.color = PartTypeColor(part.PartType);
+        dotImg.raycastTarget = false;
+        var dotRt = dotGo.GetComponent<RectTransform>();
+        dotRt.anchorMin = new Vector2(0, 0.5f);
+        dotRt.anchorMax = new Vector2(0, 0.5f);
+        dotRt.pivot = new Vector2(0, 0.5f);
+        dotRt.anchoredPosition = new Vector2(6, 0);
+        dotRt.sizeDelta = new Vector2(10, 10);
+
+        // Info label — fills remaining space with left offset for dot
+        string partName = part.Name ?? "unnamed";
+        string typeName = string.IsNullOrEmpty(part.PartType) ? "unknown" : part.PartType.ToLowerInvariant();
+        string stats = $"{typeName} \u00b7 age {part.Age} \u00b7 hp {part.Health:P0}";
+        string infoText = $"<b>{partName}</b>\n<size=10><color=#808D80>{stats}</color></size>";
+
+        var infoGo = CreateUIObject("InfoLabel", row.transform);
+        var infoTmp = infoGo.AddComponent<TextMeshProUGUI>();
+        infoTmp.text = infoText;
+        infoTmp.fontSize = 12;
+        infoTmp.color = new Color(0.85f, 0.9f, 0.85f, 1f);
+        infoTmp.enableWordWrapping = false;
+        infoTmp.overflowMode = TextOverflowModes.Ellipsis;
+        infoTmp.richText = true;
+        infoTmp.alignment = TextAlignmentOptions.MidlineLeft;
+        var infoRt = infoGo.GetComponent<RectTransform>();
+        Stretch(infoRt);
+        infoRt.offsetMin = new Vector2(22, 2);
+        infoRt.offsetMax = new Vector2(-4, -2);
+    }
+
+    private static Color PartTypeColor(string partType)
+    {
+        switch ((partType ?? "").ToLowerInvariant())
+        {
+            case "root":     return new Color(0.55f, 0.35f, 0.15f);
+            case "stem":     return new Color(0.2f, 0.5f, 0.2f);
+            case "branch":
+            case "segment":  return new Color(0.3f, 0.45f, 0.2f);
+            case "leaf":     return new Color(0.3f, 0.75f, 0.3f);
+            case "product":  return new Color(0.85f, 0.7f, 0.2f);
+            default:         return new Color(0.5f, 0.5f, 0.5f);
+        }
     }
 
     // --- Go-to-definition ---
@@ -830,6 +1328,18 @@ fn main():
         tmp.fontSize = fontSize;
         tmp.fontStyle = style;
         return tmp;
+    }
+
+    private static bool IsEscapePressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        Keyboard kb = Keyboard.current;
+        return kb != null && kb.escapeKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+        return Input.GetKeyDown(KeyCode.Escape);
+#else
+        return false;
+#endif
     }
 
     private static GameObject CreateButton(string label, Transform parent, float width, float height)

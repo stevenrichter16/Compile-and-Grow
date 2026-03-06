@@ -191,6 +191,8 @@ namespace CodeEditor.View
                 _doc.Changed += OnDocumentChanged;
                 _doc.CursorMoved += OnCursorMoved;
             }
+            if (_scrollRect != null)
+                _scrollRect.onValueChanged.AddListener(OnScrollChanged);
         }
 
         private float _prevFontSize;
@@ -213,6 +215,8 @@ namespace CodeEditor.View
                 _doc.Changed -= OnDocumentChanged;
                 _doc.CursorMoved -= OnCursorMoved;
             }
+            if (_scrollRect != null)
+                _scrollRect.onValueChanged.RemoveListener(OnScrollChanged);
         }
 
         private int _hiddenInputRaycastCleanupFrames = 3;
@@ -422,6 +426,32 @@ namespace CodeEditor.View
             _lastSyncedVersion = -1;
         }
 
+        private int _lastSyncedFirstLine = -1;
+        private int _lastSyncedLastLine = -1;
+
+        private void OnScrollChanged(Vector2 _)
+        {
+            if (_scrollManager == null || _linePool == null || _doc == null) return;
+
+            int first = _scrollManager.FirstVisibleLine;
+            int last = _scrollManager.LastVisibleLine;
+
+            // Only refresh if the visible range actually changed
+            if (first == _lastSyncedFirstLine && last == _lastSyncedLastLine) return;
+            _lastSyncedFirstLine = first;
+            _lastSyncedLastLine = last;
+
+            _linePool.UpdateVisibleLines(first, last, _doc);
+            ApplySyntaxHighlighting(first, last);
+
+            if (_gutter != null && _showLineNumbers)
+                _gutter.UpdateVisibleLines(first, last, _doc.LineCount);
+
+            UpdateCaret();
+            UpdateSelection(first, last);
+            UpdateCurrentLineHighlight();
+        }
+
         private void SyncView()
         {
             if (_scrollManager != null)
@@ -439,6 +469,8 @@ namespace CodeEditor.View
                 return;
 
             _lastSyncedVersion = _doc.Version;
+            _lastSyncedFirstLine = first;
+            _lastSyncedLastLine = last;
 
             // Update text lines
             _linePool?.UpdateVisibleLines(first, last, _doc);

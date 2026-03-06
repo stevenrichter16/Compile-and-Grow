@@ -1,320 +1,334 @@
 using System.Collections.Generic;
+using System.Text;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 [RequireComponent(typeof(CanvasRenderer))]
-public sealed class UIPlantGraphic : MaskableGraphic
+public sealed class UIPlantGraphic : MaskableGraphic, IPointerMoveHandler, IPointerExitHandler
 {
-    private const float Scale = 0.08f;
-    private const float MinWidth = 0.005f;
-    private const float MaxWidth = 0.08f;
-    private const float Padding = 4f;
+    private const float PadPx = 4f;
+    private const float CellGap = 2f;
+    private const float SectionGap = 4f;
+    private const float MinCell = 6f;
+    private const float MaxCell = 40f;
+    private const float BorderPx = 1f;
+
+    private static readonly string[] SectionTypes =
+        { "root", "stem", "branch", "segment", "leaf", "product" };
+
+    private static readonly Dictionary<string, string> SectionHeaders =
+        new Dictionary<string, string>(System.StringComparer.Ordinal)
+        {
+            { "root", "ROOTS" },
+            { "stem", "STEMS" },
+            { "branch", "BRANCHES" },
+            { "segment", "SEGMENTS" },
+            { "leaf", "LEAVES" },
+            { "product", "PRODUCTS" },
+        };
 
     private PlantBody _body;
-    private readonly List<SegmentData> _segments = new List<SegmentData>();
-    private readonly Dictionary<string, Vector2> _tips =
-        new Dictionary<string, Vector2>(System.StringComparer.Ordinal);
 
-    private struct SegmentData
+    private struct CatalogNode
     {
-        public Vector2[] points;
-        public float startWidth, endWidth;
-        public Color color;
-        public bool loop;
+        public PlantPart part;
+        public Rect rect;
     }
+
+    private struct SectionInfo
+    {
+        public string typeName;
+        public string header;
+        public List<PlantPart> parts;
+    }
+
+    private static readonly HashSet<string> BuiltInKeys = new HashSet<string>(System.StringComparer.Ordinal)
+        { "name", "type", "size", "health", "age", "energy_cost", "color_r", "color_g", "color_b" };
+
+    private readonly List<SectionInfo> _sections = new List<SectionInfo>();
+    private readonly List<CatalogNode> _nodes = new List<CatalogNode>();
+    private readonly List<TextMeshProUGUI> _headerPool = new List<TextMeshProUGUI>();
+
+    private RectTransform _tooltipRoot;
+    private Image _tooltipBg;
+    private TextMeshProUGUI _tooltipText;
+    private readonly StringBuilder _tooltipSb = new StringBuilder();
 
     public void SetBody(PlantBody body)
     {
         _body = body;
+        HideTooltip();
+        RebuildSections();
         SetVerticesDirty();
     }
 
     public void Refresh()
     {
+        HideTooltip();
+        RebuildSections();
         SetVerticesDirty();
+    }
+
+    protected override void OnDisable()
+    {
+        base.OnDisable();
+        HideTooltip();
+        for (int i = _headerPool.Count - 1; i >= 0; i--)
+        {
+            if (_headerPool[i] != null)
+                DestroyImmediate(_headerPool[i].gameObject);
+        }
+        _headerPool.Clear();
+    }
+
+    private void RebuildSections()
+    {
+        _sections.Clear();
+
+        if (_body == null || _body.Parts.Count == 0)
+        {
+            EnsureHeaderCount(0);
+            return;
+        }
+
+        // Bucket parts by type
+        var buckets = new Dictionary<string, List<PlantPart>>(System.StringComparer.Ordinal);
+        for (int i = 0; i < _body.Parts.Count; i++)
+        {
+            PlantPart part = _body.Parts[i];
+            string type = (part.PartType ?? "").ToLowerInvariant();
+            if (!buckets.TryGetValue(type, out var list))
+            {
+                list = new List<PlantPart>();
+                buckets[type] = list;
+            }
+            list.Add(part);
+        }
+
+        // Add known types in order
+        for (int i = 0; i < SectionTypes.Length; i++)
+        {
+            if (buckets.TryGetValue(SectionTypes[i], out var parts))
+            {
+                _sections.Add(new SectionInfo
+                {
+                    typeName = SectionTypes[i],
+                    header = SectionHeaders[SectionTypes[i]],
+                    parts = parts,
+                });
+                buckets.Remove(SectionTypes[i]);
+            }
+        }
+
+        // Add unknown types at the bottom
+        foreach (var kvp in buckets)
+        {
+            if (kvp.Value.Count == 0) continue;
+            _sections.Add(new SectionInfo
+            {
+                typeName = kvp.Key,
+                header = kvp.Key.ToUpperInvariant() + "S",
+                parts = kvp.Value,
+            });
+        }
+
+        EnsureHeaderCount(_sections.Count);
+    }
+
+    private void EnsureHeaderCount(int count)
+    {
+        // Deactivate excess
+        for (int i = count; i < _headerPool.Count; i++)
+        {
+            if (_headerPool[i] != null)
+                _headerPool[i].gameObject.SetActive(false);
+        }
+
+        // Create missing
+        while (_headerPool.Count < count)
+        {
+            var go = new GameObject("SectionHeader", typeof(RectTransform));
+            go.transform.SetParent(transform, false);
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.raycastTarget = false;
+            tmp.alignment = TextAlignmentOptions.Left;
+            tmp.overflowMode = TextOverflowModes.Truncate;
+            tmp.enableWordWrapping = false;
+            tmp.fontStyle = FontStyles.Bold;
+            _headerPool.Add(tmp);
+        }
+
+        // Activate needed
+        for (int i = 0; i < count; i++)
+        {
+            if (_headerPool[i] != null)
+                _headerPool[i].gameObject.SetActive(true);
+        }
     }
 
     protected override void OnPopulateMesh(VertexHelper vh)
     {
         vh.Clear();
+        _nodes.Clear();
 
-        if (_body == null || _body.Parts.Count == 0)
+        if (_body == null || _body.Parts.Count == 0 || _sections.Count == 0)
             return;
-
-        BuildSegments();
-
-        if (_segments.Count == 0)
-            return;
-
-        // Compute bounding box of all segment points
-        float minX = float.MaxValue, minY = float.MaxValue;
-        float maxX = float.MinValue, maxY = float.MinValue;
-
-        for (int i = 0; i < _segments.Count; i++)
-        {
-            var pts = _segments[i].points;
-            for (int j = 0; j < pts.Length; j++)
-            {
-                if (pts[j].x < minX) minX = pts[j].x;
-                if (pts[j].x > maxX) maxX = pts[j].x;
-                if (pts[j].y < minY) minY = pts[j].y;
-                if (pts[j].y > maxY) maxY = pts[j].y;
-            }
-        }
-
-        float plantW = maxX - minX;
-        float plantH = maxY - minY;
-        if (plantW < 0.001f) plantW = 0.1f;
-        if (plantH < 0.001f) plantH = 0.1f;
 
         Rect r = rectTransform.rect;
-        float availW = r.width - Padding * 2f;
-        float availH = r.height - Padding * 2f;
+        float availW = r.width - PadPx * 2f;
+        float availH = r.height - PadPx * 2f;
         if (availW <= 0 || availH <= 0) return;
-
-        float scale = Mathf.Min(availW / plantW, availH / plantH);
-        float cx = (minX + maxX) * 0.5f;
-        float cy = (minY + maxY) * 0.5f;
-        Vector2 center = r.center;
-
-        // Map plant-space point to rect-space
-        System.Func<Vector2, Vector2> map = (Vector2 p) =>
-        {
-            return new Vector2(
-                center.x + (p.x - cx) * scale,
-                center.y + (p.y - cy) * scale
-            );
-        };
-
-        for (int i = 0; i < _segments.Count; i++)
-        {
-            var seg = _segments[i];
-            var pts = seg.points;
-
-            if (seg.loop && pts.Length >= 3)
-            {
-                // Draw closed shape as triangle fan
-                Vector2[] mapped = new Vector2[pts.Length];
-                for (int j = 0; j < pts.Length; j++)
-                    mapped[j] = map(pts[j]);
-
-                // Find centroid
-                Vector2 centroid = Vector2.zero;
-                for (int j = 0; j < mapped.Length; j++)
-                    centroid += mapped[j];
-                centroid /= mapped.Length;
-
-                for (int j = 0; j < mapped.Length; j++)
-                {
-                    int next = (j + 1) % mapped.Length;
-                    AddTriangle(vh, centroid, mapped[j], mapped[next], seg.color);
-                }
-            }
-            else
-            {
-                // Draw line segments as quads
-                float widthScale = scale;
-                for (int j = 0; j < pts.Length - 1; j++)
-                {
-                    float t = pts.Length > 2 ? (float)j / (pts.Length - 2) : 0f;
-                    float w = Mathf.Lerp(seg.startWidth, seg.endWidth, t) * widthScale;
-                    w = Mathf.Max(w, 1f); // minimum 1px
-                    AddQuad(vh, map(pts[j]), map(pts[j + 1]), w, seg.color);
-                }
-            }
-        }
-    }
-
-    private void BuildSegments()
-    {
-        _segments.Clear();
-        _tips.Clear();
-
-        if (_body == null) return;
 
         float opacity = 1f;
         if (_body.TryGetMorphology("opacity", out object opObj) && opObj is double opD)
             opacity = (float)opD;
 
-        // Pre-calc stem height
-        float stemHeight = 0f;
-        for (int i = 0; i < _body.Parts.Count; i++)
+        // Compute header height
+        float headerH = Mathf.Clamp(r.height * 0.08f, 10f, 18f);
+
+        // Estimate cell size
+        int totalParts = 0;
+        for (int i = 0; i < _sections.Count; i++)
+            totalParts += _sections[i].parts.Count;
+
+        float cellSize = Mathf.Clamp(availW / Mathf.Max(1, Mathf.Sqrt(totalParts) * 1.5f), MinCell, MaxCell);
+
+        // Iteratively fit: compute total height, shrink if needed
+        for (int iter = 0; iter < 5; iter++)
         {
-            if (string.Equals(_body.Parts[i].PartType, "stem",
-                    System.StringComparison.OrdinalIgnoreCase))
-            {
-                stemHeight = F(_body.Parts[i], "height", _body.Parts[i].Size) * Scale;
-            }
+            float totalH = ComputeTotalHeight(availW, cellSize, headerH);
+            if (totalH <= availH || cellSize <= MinCell) break;
+            cellSize *= availH / totalH;
+            cellSize = Mathf.Max(cellSize, MinCell);
         }
 
-        for (int i = 0; i < _body.Parts.Count; i++)
-        {
-            PlantPart part = _body.Parts[i];
+        cellSize = Mathf.Clamp(cellSize, MinCell, MaxCell);
+        float totalHeight = ComputeTotalHeight(availW, cellSize, headerH);
 
-            switch ((part.PartType ?? "").ToLowerInvariant())
+        // Vertical centering
+        float startY = r.yMax - PadPx;
+        if (totalHeight < availH)
+            startY -= (availH - totalHeight) * 0.5f;
+
+        float curY = startY;
+        float leftX = r.xMin + PadPx;
+
+        int maxPerRow = Mathf.Max(1, Mathf.FloorToInt((availW + CellGap) / (cellSize + CellGap)));
+
+        for (int si = 0; si < _sections.Count; si++)
+        {
+            var section = _sections[si];
+
+            // Position header TMP
+            if (si < _headerPool.Count && _headerPool[si] != null)
             {
-                case "stem":    LayoutStem(part, opacity); break;
-                case "root":    LayoutRoot(part, opacity); break;
-                case "branch":  LayoutBranch(part, stemHeight, opacity); break;
-                case "leaf":    LayoutLeaf(part, opacity); break;
-                case "segment": LayoutSegment(part, opacity); break;
-                default:        LayoutDefault(part, opacity); break;
+                var tmp = _headerPool[si];
+                tmp.text = section.header;
+                tmp.fontSize = headerH;
+                tmp.color = PartColorForType(section.typeName, opacity);
+
+                var rt = tmp.rectTransform;
+                rt.anchorMin = new Vector2(0, 1);
+                rt.anchorMax = new Vector2(0, 1);
+                rt.pivot = new Vector2(0, 1);
+                // Position relative to parent rect
+                rt.anchoredPosition = new Vector2(
+                    leftX - r.xMin,
+                    curY - r.yMax);
+                rt.sizeDelta = new Vector2(availW, headerH);
             }
+
+            curY -= headerH + SectionGap;
+
+            // Layout squares
+            int partsCount = section.parts.Count;
+            int rows = Mathf.CeilToInt((float)partsCount / maxPerRow);
+
+            for (int pi = 0; pi < partsCount; pi++)
+            {
+                int col = pi % maxPerRow;
+                int row = pi / maxPerRow;
+
+                float x = leftX + col * (cellSize + CellGap);
+                float y = curY - row * (cellSize + CellGap) - cellSize;
+
+                _nodes.Add(new CatalogNode
+                {
+                    part = section.parts[pi],
+                    rect = new Rect(x, y, cellSize, cellSize),
+                });
+            }
+
+            curY -= rows * (cellSize + CellGap);
+        }
+
+        // Draw all squares
+        for (int i = 0; i < _nodes.Count; i++)
+        {
+            var node = _nodes[i];
+            Color c = PartColor(node.part, opacity);
+
+            // Outer border
+            Color border = c * 0.4f;
+            border.a = c.a;
+            AddFilledRect(vh, node.rect, border);
+
+            // Inner fill (1px inset)
+            Rect inner = new Rect(
+                node.rect.x + BorderPx,
+                node.rect.y + BorderPx,
+                node.rect.width - BorderPx * 2f,
+                node.rect.height - BorderPx * 2f);
+
+            if (inner.width > 0 && inner.height > 0)
+                AddFilledRect(vh, inner, c);
         }
     }
 
-    private void LayoutStem(PlantPart part, float opacity)
+    private float ComputeTotalHeight(float availW, float cellSize, float headerH)
     {
-        float h = F(part, "height", part.Size) * Scale;
-        float thick = F(part, "thickness", 1f);
-        float w = Mathf.Clamp(thick * 0.02f, MinWidth, MaxWidth);
-        Color c = PartColor(part, opacity);
-
-        _segments.Add(new SegmentData
+        int maxPerRow = Mathf.Max(1, Mathf.FloorToInt((availW + CellGap) / (cellSize + CellGap)));
+        float total = 0f;
+        for (int i = 0; i < _sections.Count; i++)
         {
-            points = new[] { Vector2.zero, new Vector2(0f, h) },
-            startWidth = w, endWidth = w * 0.6f,
-            color = c, loop = false
-        });
-
-        _tips[part.Name] = new Vector2(0f, h);
+            int rows = Mathf.CeilToInt((float)_sections[i].parts.Count / maxPerRow);
+            total += headerH + SectionGap + rows * (cellSize + CellGap);
+        }
+        return total;
     }
 
-    private void LayoutRoot(PlantPart part, float opacity)
+    private static void AddFilledRect(VertexHelper vh, Rect rect, Color color)
     {
-        Vector2 origin = ParentTip(part);
-        float d = F(part, "depth", part.Size) * Scale;
-        float spread = F(part, "spread", 0f) * Scale;
-
-        int side = StableHash(part.Name) % 2 == 0 ? 1 : -1;
-        float xOff = spread > 0f ? spread * side : side * d * 0.3f;
-        Color c = PartColor(part, opacity);
-
-        _segments.Add(new SegmentData
-        {
-            points = new[] { origin, new Vector2(origin.x + xOff, origin.y - d) },
-            startWidth = MinWidth * 2f, endWidth = MinWidth,
-            color = c, loop = false
-        });
-
-        _tips[part.Name] = new Vector2(origin.x + xOff, origin.y - d);
-    }
-
-    private void LayoutBranch(PlantPart part, float stemH, float opacity)
-    {
-        float bh = F(part, "branch_height", stemH / Scale) * Scale;
-        float angle = F(part, "branch_angle", 0.785f);
-        float len = part.Size * Scale;
-
-        int side = StableHash(part.Name) % 2 == 0 ? 1 : -1;
-        float dx = Mathf.Sin(angle) * len * side;
-        float dy = Mathf.Cos(angle) * len;
-        Vector2 start = new Vector2(0f, Mathf.Min(bh, stemH));
-        Color c = PartColor(part, opacity);
-
-        _segments.Add(new SegmentData
-        {
-            points = new[] { start, new Vector2(start.x + dx, start.y + dy) },
-            startWidth = MinWidth * 1.5f, endWidth = MinWidth,
-            color = c, loop = false
-        });
-
-        _tips[part.Name] = new Vector2(start.x + dx, start.y + dy);
-    }
-
-    private void LayoutLeaf(PlantPart part, float opacity)
-    {
-        Vector2 tip = ParentTip(part);
-        float s = Mathf.Sqrt(part.Size) * Scale * 0.5f;
-
-        int side = StableHash(part.Name) % 2 == 0 ? 1 : -1;
-        float xOff = s * 0.5f * side;
-        Color c = PartColor(part, opacity);
-
-        _segments.Add(new SegmentData
-        {
-            points = new[]
-            {
-                new Vector2(tip.x + xOff, tip.y),
-                new Vector2(tip.x + xOff + s * 0.4f, tip.y + s * 0.5f),
-                new Vector2(tip.x + xOff, tip.y + s),
-                new Vector2(tip.x + xOff - s * 0.4f, tip.y + s * 0.5f),
-            },
-            startWidth = MinWidth, endWidth = MinWidth,
-            color = c, loop = true
-        });
-
-        _tips[part.Name] = new Vector2(tip.x + xOff, tip.y + s);
-    }
-
-    private void LayoutSegment(PlantPart part, float opacity)
-    {
-        Vector2 origin = ParentTip(part);
-        float len = part.Size * Scale;
-        float angle = F(part, "angle", 0f);
-
-        float dx = Mathf.Sin(angle) * len;
-        float dy = Mathf.Cos(angle) * len;
-        Color c = PartColor(part, opacity);
-
-        _segments.Add(new SegmentData
-        {
-            points = new[] { origin, new Vector2(origin.x + dx, origin.y + dy) },
-            startWidth = MinWidth * 1.5f, endWidth = MinWidth,
-            color = c, loop = false
-        });
-
-        _tips[part.Name] = new Vector2(origin.x + dx, origin.y + dy);
-    }
-
-    private void LayoutDefault(PlantPart part, float opacity)
-    {
-        Vector2 origin = ParentTip(part);
-        Color c = PartColor(part, opacity);
-
-        _segments.Add(new SegmentData
-        {
-            points = new[] { origin, new Vector2(origin.x, origin.y + 0.05f) },
-            startWidth = MinWidth, endWidth = MinWidth,
-            color = c, loop = false
-        });
-
-        _tips[part.Name] = new Vector2(origin.x, origin.y + 0.05f);
-    }
-
-    private static void AddQuad(VertexHelper vh, Vector2 from, Vector2 to, float width, Color color)
-    {
-        Vector2 dir = (to - from);
-        if (dir.sqrMagnitude < 0.0001f) return;
-        dir.Normalize();
-        Vector2 perp = new Vector2(-dir.y, dir.x) * (width * 0.5f);
-
         UIVertex v = UIVertex.simpleVert;
         v.color = color;
-
         int idx = vh.currentVertCount;
 
-        v.position = from - perp; vh.AddVert(v);
-        v.position = from + perp; vh.AddVert(v);
-        v.position = to + perp;   vh.AddVert(v);
-        v.position = to - perp;   vh.AddVert(v);
+        v.position = new Vector3(rect.xMin, rect.yMin); vh.AddVert(v);
+        v.position = new Vector3(rect.xMax, rect.yMin); vh.AddVert(v);
+        v.position = new Vector3(rect.xMax, rect.yMax); vh.AddVert(v);
+        v.position = new Vector3(rect.xMin, rect.yMax); vh.AddVert(v);
 
         vh.AddTriangle(idx, idx + 1, idx + 2);
         vh.AddTriangle(idx, idx + 2, idx + 3);
     }
 
-    private static void AddTriangle(VertexHelper vh, Vector2 a, Vector2 b, Vector2 c, Color color)
+    private static Color PartColorForType(string type, float opacity)
     {
-        UIVertex v = UIVertex.simpleVert;
-        v.color = color;
-
-        int idx = vh.currentVertCount;
-
-        v.position = a; vh.AddVert(v);
-        v.position = b; vh.AddVert(v);
-        v.position = c; vh.AddVert(v);
-
-        vh.AddTriangle(idx, idx + 1, idx + 2);
+        Color c;
+        switch (type)
+        {
+            case "root":    c = new Color(0.55f, 0.35f, 0.15f); break;
+            case "stem":    c = new Color(0.2f, 0.5f, 0.2f); break;
+            case "branch":
+            case "segment": c = new Color(0.3f, 0.45f, 0.2f); break;
+            case "leaf":    c = new Color(0.3f, 0.75f, 0.3f); break;
+            case "product": c = new Color(0.85f, 0.7f, 0.2f); break;
+            default:        c = new Color(0.5f, 0.5f, 0.5f); break;
+        }
+        c.a = Mathf.Clamp01(opacity);
+        return c;
     }
 
     private static Color PartColor(PlantPart part, float opacity)
@@ -363,13 +377,6 @@ public sealed class UIPlantGraphic : MaskableGraphic
         return baseColor;
     }
 
-    private Vector2 ParentTip(PlantPart part)
-    {
-        if (part.Parent != null && _tips.TryGetValue(part.Parent.Name, out Vector2 tip))
-            return tip;
-        return Vector2.zero;
-    }
-
     private static float F(PlantPart part, string key, float fallback)
     {
         if (part.TryGetProperty(key, out object val))
@@ -385,12 +392,126 @@ public sealed class UIPlantGraphic : MaskableGraphic
         return fallback;
     }
 
-    private static int StableHash(string s)
+    // ── Tooltip ──────────────────────────────────────────────
+
+    private void EnsureTooltip()
     {
-        if (string.IsNullOrEmpty(s)) return 0;
-        int hash = 17;
-        for (int i = 0; i < s.Length; i++)
-            hash = hash * 31 + s[i];
-        return hash & 0x7FFFFFFF;
+        if (_tooltipRoot != null) return;
+
+        var go = new GameObject("Tooltip", typeof(RectTransform));
+        go.transform.SetParent(transform, false);
+        _tooltipRoot = go.GetComponent<RectTransform>();
+        _tooltipRoot.anchorMin = new Vector2(0, 1);
+        _tooltipRoot.anchorMax = new Vector2(0, 1);
+        _tooltipRoot.pivot = new Vector2(0, 1);
+
+        var vlg = go.AddComponent<VerticalLayoutGroup>();
+        vlg.padding = new RectOffset(6, 6, 4, 4);
+        vlg.childForceExpandWidth = true;
+        vlg.childForceExpandHeight = false;
+        vlg.childControlWidth = true;
+        vlg.childControlHeight = true;
+
+        var csf = go.AddComponent<ContentSizeFitter>();
+        csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        _tooltipBg = go.AddComponent<Image>();
+        _tooltipBg.color = new Color(0.08f, 0.08f, 0.1f, 0.95f);
+        _tooltipBg.raycastTarget = false;
+
+        var textGo = new GameObject("TooltipText", typeof(RectTransform));
+        textGo.transform.SetParent(go.transform, false);
+        _tooltipText = textGo.AddComponent<TextMeshProUGUI>();
+        _tooltipText.fontSize = 11f;
+        _tooltipText.color = new Color(0.85f, 0.85f, 0.85f, 1f);
+        _tooltipText.raycastTarget = false;
+        _tooltipText.enableWordWrapping = false;
+        _tooltipText.overflowMode = TextOverflowModes.Overflow;
+        _tooltipText.richText = true;
+
+        go.SetActive(false);
+    }
+
+    public void OnPointerMove(PointerEventData eventData)
+    {
+        if (_nodes.Count == 0) return;
+
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            rectTransform, eventData.position, eventData.pressEventCamera, out Vector2 localPoint);
+
+        for (int i = 0; i < _nodes.Count; i++)
+        {
+            if (_nodes[i].rect.Contains(localPoint))
+            {
+                ShowTooltip(_nodes[i].part, localPoint);
+                return;
+            }
+        }
+
+        HideTooltip();
+    }
+
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        HideTooltip();
+    }
+
+    private void ShowTooltip(PlantPart part, Vector2 localPoint)
+    {
+        EnsureTooltip();
+
+        // Build tooltip text
+        _tooltipSb.Clear();
+        _tooltipSb.Append("<b>").Append(part.Name).Append("</b>\n");
+        _tooltipSb.Append(part.PartType)
+            .Append(" \u00b7 age ").Append(part.Age)
+            .Append(" \u00b7 hp ").Append(Mathf.RoundToInt(part.Health * 100f)).Append("%\n");
+        _tooltipSb.Append("size: ").Append(part.Size.ToString("0.##"))
+            .Append(" \u00b7 cost: ").Append(part.EnergyCost.ToString("0.##"));
+
+        // Custom properties
+        bool hasCustom = false;
+        foreach (var kvp in part.Properties)
+        {
+            if (BuiltInKeys.Contains(kvp.Key)) continue;
+            if (!hasCustom)
+            {
+                _tooltipSb.Append("\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+                hasCustom = true;
+            }
+            _tooltipSb.Append('\n').Append(kvp.Key).Append(": ").Append(kvp.Value);
+        }
+
+        _tooltipText.text = _tooltipSb.ToString();
+        _tooltipText.ForceMeshUpdate();
+
+        // Position: offset right and up from pointer, clamped within bounds
+        Rect bounds = rectTransform.rect;
+        Vector2 preferred = _tooltipText.GetPreferredValues();
+        float tipW = preferred.x + 12f; // padding
+        float tipH = preferred.y + 8f;
+
+        float x = localPoint.x + 12f;
+        float y = localPoint.y + 12f;
+
+        // Clamp so tooltip stays inside the graphic rect
+        if (x + tipW > bounds.xMax) x = localPoint.x - tipW - 4f;
+        if (y > bounds.yMax) y = bounds.yMax;
+        if (y - tipH < bounds.yMin) y = bounds.yMin + tipH;
+        if (x < bounds.xMin) x = bounds.xMin;
+
+        // anchoredPosition is relative to parent anchors (top-left)
+        _tooltipRoot.anchoredPosition = new Vector2(
+            x - bounds.xMin,
+            y - bounds.yMax);
+
+        _tooltipRoot.gameObject.SetActive(true);
+    }
+
+    private void HideTooltip()
+    {
+        if (_tooltipRoot != null)
+            _tooltipRoot.gameObject.SetActive(false);
     }
 }

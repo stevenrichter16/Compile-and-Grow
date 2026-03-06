@@ -15,6 +15,7 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private SpriteRenderer promptRenderer;
 
     private CodeEditorView _editorView;
+    private GrowlTerminalScreen _terminalScreen;
     private bool _inputLocked;
     private TerminalInteractable _nearestTerminal;
 
@@ -23,6 +24,7 @@ public sealed class PlayerController : MonoBehaviour
         if (codeEditorRoot != null)
         {
             _editorView = codeEditorRoot.GetComponentInChildren<CodeEditorView>(true);
+            _terminalScreen = codeEditorRoot.GetComponentInChildren<GrowlTerminalScreen>(true);
             codeEditorRoot.SetActive(false);
         }
 
@@ -35,7 +37,11 @@ public sealed class PlayerController : MonoBehaviour
         if (_inputLocked)
         {
             if (IsEscapePressed())
+            {
+                if (_terminalScreen != null && _terminalScreen.IsDetailOverlayOpen)
+                    return; // terminal's Update() handles this Escape
                 CloseTerminal();
+            }
             return;
         }
 

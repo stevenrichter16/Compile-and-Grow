@@ -683,6 +683,9 @@ namespace GrowlLanguage.Analyzer
                 Scope classScope = parentScope.CreateChild("class:" + cls.Name);
                 _scopeByNode[cls] = classScope;
 
+                // self is implicitly available in all class methods
+                Declare(classScope, "self", SymbolKind.Variable, cls.Line, cls.Column, cls);
+
                 AggregateTypeInfo info = GetOrCreateAggregateType(cls.Name);
                 for (int i = 0; i < cls.Members.Count; i++)
                 {
