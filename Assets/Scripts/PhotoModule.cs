@@ -13,8 +13,8 @@ public static class PhotoModule
     // ── Photosynthesis ──────────────────────────────────────────────
 
     /// <summary>
-    /// photo.absorb_light(efficiency) — standard photosynthesis.
-    /// Converts light + CO2 + water into energy.
+    /// photo.absorb_light() — standard photosynthesis.
+    /// energy = leafArea * baseRate * lightCapture * co2Factor * waterFactor
     /// </summary>
     public static double AbsorbLight(PlantBody body, OrganismEntity org, ResourceGrid world, double efficiencyOverride)
     {
@@ -23,59 +23,50 @@ public static class PhotoModule
 
         float stomata = LeafModule.GetAverageStomataOpenness(body);
 
-        // Get light intensity from world
-        double lightIntensity = 0.7; // default moderate light
+        double lightIntensity = 0.7;
         if (world.TryGetWorldValue("power", out object lVal) && TryConvertToDouble(lVal, out double lv))
-            lightIntensity = Clamp01(lv / 100.0); // normalize power to 0-1
+            lightIntensity = Clamp01(lv / 100.0);
 
-        // Get water availability from org
-        double waterLevel = 0.5;
+        double lightCapture = lightIntensity;
+
+        PlantPart anyLeaf = body.FindPartsByType("leaf").Count > 0 ? body.FindPartsByType("leaf")[0] : null;
+
+        if (anyLeaf != null && anyLeaf.TryGetProperty("pigment", out object pig) && pig is string pigment)
+            lightCapture *= GetPigmentMultiplier(pigment, lightIntensity);
+
+        if (anyLeaf != null && anyLeaf.TryGetProperty("chlorophyll_boost", out object cb) && TryConvertToDouble(cb, out double boost))
+            lightCapture *= boost;
+
+        if (anyLeaf != null && anyLeaf.TryGetProperty("light_saturation", out object ls) && TryConvertToDouble(ls, out double sat))
+        {
+            if (lightIntensity > sat)
+                lightCapture *= sat / lightIntensity;
+        }
+
+        lightCapture = Clamp01(lightCapture);
+
+        double airCo2 = 0.04;
+        if (world.TryGetWorldValue("air_co2", out object co2Val) && TryConvertToDouble(co2Val, out double co2))
+            airCo2 = co2;
+
+        double co2Factor = stomata * airCo2;
+
+        double waterFactor = 0.5;
         if (org.TryGetState("water", out object wVal) && TryConvertToDouble(wVal, out double wv))
-            waterLevel = wv;
+            waterFactor = Clamp01(wv);
 
-        // Calculate efficiency
         double efficiency;
         if (efficiencyOverride >= 0d && efficiencyOverride <= 1d)
-        {
             efficiency = efficiencyOverride;
-        }
         else
-        {
-            // Auto-calculated from leaf area, light, CO2 (stomata), water
-            efficiency = lightIntensity * stomata * waterLevel;
-
-            // Apply pigment bonus
-            PlantPart anyLeaf = body.FindPartsByType("leaf").Count > 0 ? body.FindPartsByType("leaf")[0] : null;
-            if (anyLeaf != null && anyLeaf.TryGetProperty("pigment", out object pig) && pig is string pigment)
-            {
-                efficiency *= GetPigmentMultiplier(pigment, lightIntensity);
-            }
-
-            // Apply chlorophyll boost
-            if (anyLeaf != null && anyLeaf.TryGetProperty("chlorophyll_boost", out object cb) && TryConvertToDouble(cb, out double boost))
-            {
-                efficiency *= boost;
-            }
-
-            // Apply light saturation threshold
-            if (anyLeaf != null && anyLeaf.TryGetProperty("light_saturation", out object ls) && TryConvertToDouble(ls, out double sat))
-            {
-                if (lightIntensity > sat)
-                    efficiency *= sat / lightIntensity; // diminishing returns above saturation
-            }
-        }
-
-        efficiency = Clamp01(efficiency);
+            efficiency = lightCapture * co2Factor * waterFactor;
 
         double energyProduced = leafArea * BasePhotosynthesisRate * efficiency;
 
-        // Consume some water (transpiration through open stomata)
         double waterCost = leafArea * 0.01 * stomata;
         org.TryAddState("water", -waterCost, out _, out _);
 
-        // Add energy
         org.TryAddState("energy", energyProduced, out _, out _);
-
         return energyProduced;
     }
 

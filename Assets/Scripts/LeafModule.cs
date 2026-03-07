@@ -268,7 +268,8 @@ public static class LeafModule
         if (world.TryGetWorldValue(key, out object cVal) && TryConvertToDouble(cVal, out double c))
             concentration = c;
 
-        double absorbed = leafArea * 0.003 * concentration;
+        float stomata = GetAverageStomataOpenness(body);
+        double absorbed = leafArea * 1.0 * concentration * stomata;
         org.TryAddState(chemical.Trim().ToLowerInvariant(), absorbed, out _, out _);
         return absorbed;
     }

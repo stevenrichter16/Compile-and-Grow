@@ -42,6 +42,8 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private ResourceGrid _resourceGrid;
     private TMP_Text _detailIOText;
     private TMP_Text _detailEnvText;
+    private TMP_InputField _skipTickInput;
+    private bool _fastForwarding;
 
     public bool IsDetailOverlayOpen => _detailOverlay != null && _detailOverlay.activeSelf;
 
@@ -68,136 +70,46 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private static readonly Color TabInactive = new Color(0.14f, 0.14f, 0.17f, 1f);
 
     private const string DefaultProgram =
-@"# Thornveil — A fortified swamp organism
-# Uses classes, phases, adapt, when/then, cycles, and tickers
-
-struct DefenseConfig:
-    sharpness: float = 0.9
-    density: float = 0.7
-    toxin_potency: float = 0.8
-    armor_thickness: float = 2.0
-
-class ThornveilState:
-    fn new():
-        self.config = DefenseConfig()
-        self.water_stressed = false
-        self.leaves_deployed = 0
-        self.defense_active = false
-
-    fn deploy_leaves(count, size):
-        i = 0
-        while i < count:
-            leaf.grow(size)
-            i += 1
-        self.leaves_deployed += count
-
-    fn fortify_stem(part_name):
-        defense.grow_thorns(part_name, self.config.sharpness, self.config.density)
-        defense.grow_armor(part_name, self.config.armor_thickness)
-        self.defense_active = true
-
-    fn apply_toxins():
-        defense.produce_toxin(""alkaloid"", self.config.toxin_potency, ""leaf"")
-
-STATE = ThornveilState()
+@"# Sprout — a simple photosynthesizer
+# Absorbs light and CO2, produces oxygen
 
 @role(""intake"")
-fn intake(org, env):
-    root.grow_down(3)
-    root.grow_wide(4)
-    root.branch(3)
+fn intake():
+    phase ""seedling""(0, 0.1):
+        root.grow_down(1)
     root.absorb(""water"")
-    root.absorb(""nitrogen"")
-    root.set_absorption_rate(""water"", 0.8)
-    root.anchor(0.9)
-    leaf.absorb_moisture()
     leaf.absorb_chemical(""co2"")
 
 @role(""structure"")
-fn structure(org, env):
-    phase ""seedling""(0, 0.2):
-        stem.grow_up(2)
-        stem.set_rigidity(0.4)
-        stem.set_material(""fibrous"")
+fn structure():
+    phase ""seedling""(0, 0.1):
+        stem.grow_up(1)
 
-    phase ""vegetative""(0.2, 0.6):
-        stem.grow_up(3)
-        stem.grow_thick(1)
-        stem.branch(3)
-        stem.grow_segment(length: 2, angle: -45)
-        stem.grow_segment(length: 1.5, angle: 30)
-        stem.set_rigidity(0.85)
-        stem.produce_bark()
-
-    phase ""mature""(0.6, 1.0):
-        stem.produce_wax()
-        stem.heal(""*"", 0.5)
+    phase ""more leaves""(0.1, 1.0):
+        leaf.grow(4)
 
 @role(""energy"")
-fn energy(org, env):
+fn energy():
     photo.absorb_light()
-    photo.set_pigment(""chlorophyll-b"")
-    photo.boost_chlorophyll()
-    photo.set_metabolism(1.3)
-    photo.store_energy(5, location: ""stem"")
+    leaf.open_stomata(1.0)
 
-@role(""output"")
-fn output(org, env):
-    phase ""seedling""(0, 0.2):
-        STATE.deploy_leaves(2, 3)
-        leaf.set_coating(""waxy"")
-
-    phase ""vegetative""(0.2, 0.6):
-        STATE.deploy_leaves(4, 2)
-        leaf.grow(6)
-        leaf.set_color(0.15, 0.55, 0.2)
-        leaf.open_stomata(0.7)
-        leaf.track_light(true)
-        leaf.set_lifespan(80)
-        leaf.reshape(""leaf_1"", ""serrated"")
-        STATE.fortify_stem(""stem_main"")
-        STATE.apply_toxins()
-        defense.sticky_trap(""leaf_1"", 0.6)
-        defense.grow_camouflage(""vegetation"")
-
-    phase ""mature""(0.6, 1.0):
-        defense.resist_disease(""fungal"", 0.7)
-
-    o2 = synthesize(base: ""chemical"", type: ""oxygen"")
-    emit(o2, 0.1)
+#@role(""output"")
+#fn output():
+#    o2 = synthesize(""chemical"", type: ""oxygen"")
+#    if o2 != none:
+#        emit(o2, 0.1)
 
 fn main():
-    org_add(""maturity"", 0.05)
-    org_add(""age"", 1)
-    m = org_get(""maturity"")
+    intake()
+    structure()
+    energy()
+    #output()
+
     a = org_get(""age"")
-    print(""--- Tick "" + str(a) + "" | maturity: "" + str(m) + "" ---"")
-
-    intake(none, none)
-    structure(none, none)
-    energy(none, none)
-    output(none, none)
-
-    when org.water < 0.15:
-        leaf.close_stomata()
-        root.grow_toward(""water"", 5)
-    then when org.water >= 0.4:
-        leaf.open_stomata(0.8)
-
-    cycle ""maintenance"" period 20:
-        at 0:
-            root.absorb(""water"")
-            root.absorb(""nitrogen"")
-        at 10:
-            stem.heal(""*"", 0.3)
-
-    ticker ""status"" every 10 ticks:
-        leaf.absorb_moisture()
-
     e = org_get(""energy"")
-    h = org_get(""health"")
     w = org_get(""water"")
-    print(""  Status: energy="" + str(e) + "" health="" + str(h) + "" water="" + str(w))
+    m = org_get(""maturity"")
+    print(""tick "" + str(a) + ""  energy="" + str(e) + ""  water="" + str(w) + ""  maturity="" + str(m))
 ";
 
     private void Awake()
@@ -299,7 +211,7 @@ fn main():
         // --- Tab bar ---
         BuildTabBar(panel.transform);
 
-        // --- Code panel (wraps editor + buttons + output) ---
+        // --- Code panel (wraps editor + output side by side, buttons below) ---
         _codePanel = CreateUIObject("CodePanel", panel.transform);
         var codePanelVlg = _codePanel.AddComponent<VerticalLayoutGroup>();
         codePanelVlg.spacing = 4;
@@ -310,48 +222,41 @@ fn main():
         var codePanelLE = _codePanel.AddComponent<LayoutElement>();
         codePanelLE.flexibleHeight = 1;
 
-        // --- Code editor (reparent existing) ---
-        _editor.transform.SetParent(_codePanel.transform, false);
+        // --- Editor + Output side by side ---
+        var editorOutputRow = CreateUIObject("EditorOutputRow", _codePanel.transform);
+        var rowHlg = editorOutputRow.AddComponent<HorizontalLayoutGroup>();
+        rowHlg.spacing = 4;
+        rowHlg.childForceExpandWidth = false;
+        rowHlg.childForceExpandHeight = true;
+        rowHlg.childControlWidth = true;
+        rowHlg.childControlHeight = true;
+        var rowLE = editorOutputRow.AddComponent<LayoutElement>();
+        rowLE.flexibleHeight = 1;
+
+        // --- Code editor (reparent existing, left side) ---
+        _editor.transform.SetParent(editorOutputRow.transform, false);
         var editorLE = _editor.gameObject.AddComponent<LayoutElement>();
-        editorLE.flexibleHeight = 3;
+        editorLE.flexibleWidth = 3;
+        editorLE.flexibleHeight = 1;
         editorLE.minHeight = 120;
 
-        // --- Separator ---
-        CreateSeparator(_codePanel.transform);
+        // --- Output panel (right side) ---
+        var outputPanel = CreateUIObject("OutputPanel", editorOutputRow.transform);
+        var outputPanelVlg = outputPanel.AddComponent<VerticalLayoutGroup>();
+        outputPanelVlg.spacing = 4;
+        outputPanelVlg.padding = new RectOffset(0, 0, 0, 0);
+        outputPanelVlg.childForceExpandWidth = true;
+        outputPanelVlg.childForceExpandHeight = false;
+        outputPanelVlg.childControlWidth = true;
+        outputPanelVlg.childControlHeight = true;
+        var outputPanelLE = outputPanel.AddComponent<LayoutElement>();
+        outputPanelLE.flexibleWidth = 2;
 
-        // --- Button bar ---
-        var buttonBar = CreateUIObject("ButtonBar", _codePanel.transform);
-        var barLE = buttonBar.AddComponent<LayoutElement>();
-        barLE.preferredHeight = 36;
-        barLE.flexibleWidth = 1;
+        // Output label
+        CreateLabel("Output", outputPanel.transform, 14, FontStyles.Bold, height: 20);
 
-        var barHlg = buttonBar.AddComponent<HorizontalLayoutGroup>();
-        barHlg.spacing = 8;
-        barHlg.childAlignment = TextAnchor.MiddleLeft;
-        barHlg.childForceExpandWidth = false;
-        barHlg.childForceExpandHeight = false;
-        barHlg.childControlWidth = true;
-        barHlg.childControlHeight = true;
-
-        var runBtn = CreateButton("Run (Ctrl+Enter)", buttonBar.transform, 160, 30);
-        runBtn.GetComponent<Button>().onClick.AddListener(RunCode);
-
-        var clearBtn = CreateButton("Clear Output", buttonBar.transform, 130, 30);
-        clearBtn.GetComponent<Button>().onClick.AddListener(ClearOutput);
-
-        var tickBtn = CreateButton("Start Tick", buttonBar.transform, 120, 30);
-        _tickBtnLabel = tickBtn.GetComponentInChildren<TMP_Text>();
-        tickBtn.GetComponent<Button>().onClick.AddListener(ToggleTick);
-
-        // --- Separator ---
-        CreateSeparator(_codePanel.transform);
-
-        // --- Output label ---
-        CreateLabel("Output", _codePanel.transform, 14, FontStyles.Bold, height: 20);
-
-        // --- Output (read-only, selectable TMP_InputField) ---
-        var outputArea = CreateUIObject("OutputArea", _codePanel.transform);
-        outputArea.SetActive(false);
+        // Output area (read-only, selectable TMP_InputField)
+        var outputArea = CreateUIObject("OutputArea", outputPanel.transform);
 
         var outputLE = outputArea.AddComponent<LayoutElement>();
         outputLE.flexibleHeight = 1;
@@ -392,7 +297,36 @@ fn main():
         _outputInput.caretWidth = 0;
         _outputInput.text = "(no output)";
 
+        // Force TMP_InputField initialization
+        outputArea.SetActive(false);
         outputArea.SetActive(true);
+
+        // --- Separator ---
+        CreateSeparator(_codePanel.transform);
+
+        // --- Button bar ---
+        var buttonBar = CreateUIObject("ButtonBar", _codePanel.transform);
+        var barLE = buttonBar.AddComponent<LayoutElement>();
+        barLE.preferredHeight = 36;
+        barLE.flexibleWidth = 1;
+
+        var barHlg = buttonBar.AddComponent<HorizontalLayoutGroup>();
+        barHlg.spacing = 8;
+        barHlg.childAlignment = TextAnchor.MiddleLeft;
+        barHlg.childForceExpandWidth = false;
+        barHlg.childForceExpandHeight = false;
+        barHlg.childControlWidth = true;
+        barHlg.childControlHeight = true;
+
+        var runBtn = CreateButton("Run (Ctrl+Enter)", buttonBar.transform, 160, 30);
+        runBtn.GetComponent<Button>().onClick.AddListener(RunCode);
+
+        var clearBtn = CreateButton("Clear Output", buttonBar.transform, 130, 30);
+        clearBtn.GetComponent<Button>().onClick.AddListener(ClearOutput);
+
+        var tickBtn = CreateButton("Start Tick", buttonBar.transform, 120, 30);
+        _tickBtnLabel = tickBtn.GetComponentInChildren<TMP_Text>();
+        tickBtn.GetComponent<Button>().onClick.AddListener(ToggleTick);
 
         // --- Plants panel (hidden by default) ---
         BuildPlantsPanel(panel.transform);
@@ -418,7 +352,7 @@ fn main():
         tabHlg.spacing = 2;
         tabHlg.childAlignment = TextAnchor.MiddleLeft;
         tabHlg.childForceExpandWidth = false;
-        tabHlg.childForceExpandHeight = true;
+        tabHlg.childForceExpandHeight = false;
         tabHlg.childControlWidth = true;
         tabHlg.childControlHeight = true;
 
@@ -433,6 +367,57 @@ fn main():
         _plantsTabImg = plantsTab.GetComponent<Image>();
         _plantsTabLabel = plantsTab.GetComponentInChildren<TMP_Text>();
         plantsTab.GetComponent<Button>().onClick.AddListener(() => SwitchTab(true));
+
+        // Spacer
+        var spacer = CreateUIObject("Spacer", tabBar.transform);
+        var spacerLE = spacer.AddComponent<LayoutElement>();
+        spacerLE.preferredWidth = 16;
+
+        // Skip-to-tick label
+        var skipLabel = CreateUIObject("SkipLabel", tabBar.transform);
+        var skipLabelTmp = skipLabel.AddComponent<TextMeshProUGUI>();
+        skipLabelTmp.text = "Skip to tick:";
+        skipLabelTmp.fontSize = 11;
+        skipLabelTmp.color = new Color(0.6f, 0.6f, 0.65f, 1f);
+        skipLabelTmp.alignment = TextAlignmentOptions.MidlineLeft;
+        skipLabelTmp.enableWordWrapping = false;
+        var skipLabelLE = skipLabel.AddComponent<LayoutElement>();
+        skipLabelLE.preferredWidth = 80;
+        skipLabelLE.preferredHeight = 24;
+
+        // Skip tick input
+        var skipInputGo = CreateUIObject("SkipTickInput", tabBar.transform);
+        var skipInputImg = skipInputGo.AddComponent<Image>();
+        skipInputImg.color = new Color(0.12f, 0.12f, 0.15f, 1f);
+        var skipInputLE = skipInputGo.AddComponent<LayoutElement>();
+        skipInputLE.preferredWidth = 60;
+        skipInputLE.preferredHeight = 24;
+
+        var skipTextArea = CreateUIObject("Text Area", skipInputGo.transform);
+        var skipTextAreaRt = skipTextArea.GetComponent<RectTransform>();
+        Stretch(skipTextAreaRt);
+        skipTextAreaRt.offsetMin = new Vector2(4, 2);
+        skipTextAreaRt.offsetMax = new Vector2(-4, -2);
+        skipTextArea.AddComponent<RectMask2D>();
+
+        var skipTextGo = CreateUIObject("Text", skipTextArea.transform);
+        var skipTmp = skipTextGo.AddComponent<TextMeshProUGUI>();
+        skipTmp.fontSize = 12;
+        skipTmp.color = new Color(0.85f, 0.9f, 0.85f, 1f);
+        skipTmp.alignment = TextAlignmentOptions.MidlineLeft;
+        Stretch(skipTextGo.GetComponent<RectTransform>());
+
+        _skipTickInput = skipInputGo.AddComponent<TMP_InputField>();
+        _skipTickInput.textComponent = skipTmp;
+        _skipTickInput.textViewport = skipTextAreaRt;
+        _skipTickInput.targetGraphic = skipInputImg;
+        _skipTickInput.contentType = TMP_InputField.ContentType.IntegerNumber;
+        _skipTickInput.text = "";
+        _skipTickInput.placeholder = null;
+
+        // Skip button
+        var skipBtn = CreateButton("Skip", tabBar.transform, 50, 24);
+        skipBtn.GetComponent<Button>().onClick.AddListener(SkipToTick);
     }
 
     private static GameObject CreateTabButton(string label, Transform parent)
@@ -459,7 +444,7 @@ fn main():
 
         var le = go.AddComponent<LayoutElement>();
         le.preferredWidth = 80;
-        le.flexibleHeight = 1;
+        le.preferredHeight = 7;
 
         return go;
     }
@@ -856,6 +841,41 @@ fn main():
             _outputInput.text = "(no output)";
     }
 
+    private void SkipToTick()
+    {
+        if (_skipTickInput == null || string.IsNullOrWhiteSpace(_skipTickInput.text)) return;
+        if (!int.TryParse(_skipTickInput.text, out int targetTick) || targetTick <= 0) return;
+
+        // Start ticking if not already
+        if (!_ticking)
+            StartTicking();
+        if (_tickManager == null) return;
+
+        int ticksToRun = targetTick - (int)_tickCount;
+        if (ticksToRun <= 0) return;
+
+        _fastForwarding = true;
+        for (int i = 0; i < ticksToRun; i++)
+            _tickManager.AdvanceTick(1);
+        _fastForwarding = false;
+
+        // Update output text once
+        if (_outputInput != null) _outputInput.text = _output;
+
+        // Do a single UI refresh at the end
+        if (_showingPlantsTab && _plantsPanel.activeSelf)
+            RefreshPlantsGrid();
+        if (IsDetailOverlayOpen && _detailOrganism != null)
+        {
+            _detailGraphic.SetBody(_detailOrganism.Body);
+            _detailGraphic.Refresh();
+            RefreshPartsList();
+            RefreshDetailInfo();
+        }
+
+        _skipTickInput.text = "";
+    }
+
     // --- Tick mode ---
 
     private void ToggleTick()
@@ -914,7 +934,12 @@ fn main():
         string source = _editor.Text;
         if (string.IsNullOrWhiteSpace(source)) return;
 
+        // Age the sandbox organism consistently with GeneExecutionManager
+        _sandboxOrganism.TryAddState("age", 1, out _, out _);
+        _sandboxOrganism.TryAddState("maturity", 0.05, out _, out _);
+
         var bridge = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+        bridge.ClearActionLog();
         bridge.SetOrganism(_sandboxOrganism);
         _bioContext.CurrentTick = tick;
         bridge.SetBioContext(_bioContext);
@@ -942,13 +967,20 @@ fn main():
         for (int i = 0; i < result.OutputLines.Count; i++)
             lines.Add(result.OutputLines[i]);
 
-        // Only append if there's something to show
+        // Append action log from bridge
+        var actionLog = bridge.ActionLog;
+        for (int i = 0; i < actionLog.Count; i++)
+            lines.Add("<color=#AABB99>" + actionLog[i] + "</color>");
+
+        // Always show tick header with actions
+        _output += "<color=#888888>--- Tick " + _tickCount + " ---</color>\n";
         if (lines.Count > 0)
-        {
-            _output += "<color=#888888>--- Tick " + _tickCount + " ---</color>\n";
             _output += string.Join("\n", lines) + "\n";
-            if (_outputInput != null) _outputInput.text = _output;
-        }
+
+        // Skip heavy UI updates during fast-forward; update text at end
+        if (_fastForwarding) return;
+
+        if (_outputInput != null) _outputInput.text = _output;
 
         // Refresh plants grid if visible
         if (_showingPlantsTab && _plantsPanel.activeSelf)

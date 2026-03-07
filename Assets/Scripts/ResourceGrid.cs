@@ -9,6 +9,7 @@ public sealed class ResourceGrid : MonoBehaviour
     [SerializeField] private float worldPower = 100f;
     [SerializeField] private float worldTemperature = 22f;
     [SerializeField] private float worldMoisture = 0.5f;
+    [SerializeField] private float airCo2 = 0.04f;
 
     private readonly Dictionary<string, object> _customWorldValues = new Dictionary<string, object>(StringComparer.Ordinal);
 
@@ -24,6 +25,9 @@ public sealed class ResourceGrid : MonoBehaviour
                 return true;
             case "moisture":
                 value = worldMoisture;
+                return true;
+            case "air_co2":
+                value = airCo2;
                 return true;
         }
 
@@ -62,6 +66,16 @@ public sealed class ResourceGrid : MonoBehaviour
                 worldMoisture = Mathf.Clamp01(worldMoisture);
                 errorMessage = null;
                 return true;
+
+            case "air_co2":
+                if (!TryConvertToFloat(value, out airCo2))
+                {
+                    errorMessage = "world.air_co2 expects a numeric value.";
+                    return false;
+                }
+                airCo2 = Mathf.Max(0f, airCo2);
+                errorMessage = null;
+                return true;
         }
 
         _customWorldValues[key ?? string.Empty] = value;
@@ -91,6 +105,12 @@ public sealed class ResourceGrid : MonoBehaviour
                 result = worldMoisture;
                 errorMessage = null;
                 return true;
+
+            case "air_co2":
+                airCo2 = Mathf.Max(0f, airCo2 + (float)delta);
+                result = airCo2;
+                errorMessage = null;
+                return true;
         }
 
         if (_customWorldValues.TryGetValue(key ?? string.Empty, out object existing) &&
@@ -118,6 +138,7 @@ public sealed class ResourceGrid : MonoBehaviour
             ["power"] = worldPower,
             ["temperature"] = worldTemperature,
             ["moisture"] = worldMoisture,
+            ["air_co2"] = airCo2,
         };
 
         foreach (KeyValuePair<string, object> pair in _customWorldValues)

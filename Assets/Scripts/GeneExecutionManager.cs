@@ -65,6 +65,10 @@ public sealed class GeneExecutionManager : MonoBehaviour
             if (!org.IsAlive || string.IsNullOrWhiteSpace(org.GrowlSource))
                 continue;
 
+            // Age every organism by 1 each tick, advance maturity
+            org.TryAddState("age", 1, out _, out _);
+            org.TryAddState("maturity", 0.05, out _, out _);
+
             _bridge.SetOrganism(org);
 
             // Retrieve or create persistent biological context for this organism

@@ -21,6 +21,11 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     private EnvironmentProxy _envProxy;
     private GrowlLanguage.Runtime.BiologicalContext _bioContext;
 
+    private readonly List<string> _actionLog = new List<string>();
+    public IReadOnlyList<string> ActionLog => _actionLog;
+    public void ClearActionLog() => _actionLog.Clear();
+    private void Log(string message) => _actionLog.Add(message);
+
     private void Awake()
     {
         EnsureSystems();
@@ -69,6 +74,102 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             return false;
         }
 
+        result = null;
+        errorMessage = null;
+
+        bool success = TryInvokeBuiltinInner(builtinName, args, out result, out errorMessage);
+
+        // Log module actions (skip getters / reads)
+        if (success && !IsGetterBuiltin(builtinName))
+        {
+            Log(FormatActionLog(builtinName, args, result));
+
+            // Show photosynthesis breakdown
+            if (builtinName == "photo_absorb_light" && organismEntity != null && resourceGrid != null)
+            {
+                PlantBody b = GetOrCreateBody();
+                float leafArea = LeafModule.GetTotalLeafArea(b);
+                float stomata = LeafModule.GetAverageStomataOpenness(b);
+                double lightInt = 0.7;
+                if (resourceGrid.TryGetWorldValue("power", out object lpv) && lpv is float lpf)
+                    lightInt = Mathf.Clamp01(lpf / 100f);
+                double airCo2 = 0.04;
+                if (resourceGrid.TryGetWorldValue("air_co2", out object acv) && acv is float acf)
+                    airCo2 = acf;
+                double water = 0.5;
+                if (organismEntity.TryGetState("water", out object wv))
+                {
+                    if (wv is double wd) water = wd;
+                    else if (wv is float wf) water = wf;
+                }
+                Log($"  leafArea={leafArea:F1} light={lightInt:F2} co2={stomata * airCo2:F4} water={water:F2}");
+            }
+        }
+
+        return success;
+    }
+
+    private static bool IsGetterBuiltin(string name)
+    {
+        return name.EndsWith("_get") || name.StartsWith("org_memory") ||
+               name.StartsWith("world_get") || name.StartsWith("seed_get") ||
+               name.StartsWith("parts_") ||
+               name.StartsWith("root_sense") ||
+               name == "org_get";
+    }
+
+    private static string FormatActionLog(string name, IReadOnlyList<RuntimeCallArgument> args, object result)
+    {
+        string display = name.Replace('_', '.');
+
+        // Summarize key arguments
+        var parts = new List<string>();
+        for (int i = 0; i < args.Count; i++)
+        {
+            object v = args[i].Value;
+            if (v == null) continue;
+            string argName = args[i].Name;
+            string formatted;
+            if (v is double d)
+                formatted = d.ToString(d == (long)d ? "F0" : "F2");
+            else if (v is float f)
+                formatted = f.ToString(f == (int)f ? "F0" : "F2");
+            else if (v is System.Collections.IDictionary)
+                formatted = "{...}";
+            else if (v is System.Collections.IList)
+                formatted = "[...]";
+            else
+                formatted = v.ToString();
+
+            if (!string.IsNullOrEmpty(argName))
+                parts.Add(argName + "=" + formatted);
+            else
+                parts.Add(formatted);
+        }
+
+        string argStr = parts.Count > 0 ? "(" + string.Join(", ", parts) + ")" : "()";
+
+        // Append result summary for interesting returns
+        string resultStr = "";
+        if (result != null && !(result is bool))
+        {
+            if (result is double rd)
+                resultStr = " → " + (rd == (long)rd ? rd.ToString("F0") : rd.ToString("F2"));
+            else if (result is float rf)
+                resultStr = " → " + (rf == (int)rf ? rf.ToString("F0") : rf.ToString("F2"));
+            else if (result is System.Collections.IDictionary)
+                resultStr = " → product";
+        }
+
+        return display + argStr + resultStr;
+    }
+
+    private bool TryInvokeBuiltinInner(
+        string builtinName,
+        IReadOnlyList<RuntimeCallArgument> args,
+        out object result,
+        out string errorMessage)
+    {
         result = null;
         errorMessage = null;
 
