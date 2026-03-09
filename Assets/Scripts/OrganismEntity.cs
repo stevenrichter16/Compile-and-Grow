@@ -25,6 +25,14 @@ public sealed class OrganismEntity : MonoBehaviour
     private readonly Dictionary<string, object> _customState = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, object> _memory = new Dictionary<string, object>(StringComparer.Ordinal);
 
+    // Per-tick resource flow tracking
+    private float _waterGained, _waterSpent, _co2Gained, _co2Spent;
+    public float WaterGained => _waterGained;
+    public float WaterSpent => _waterSpent;
+    public float Co2Gained => _co2Gained;
+    public float Co2Spent => _co2Spent;
+    public void ResetTickTracking() { _waterGained = _waterSpent = _co2Gained = _co2Spent = 0f; }
+
     private PlantBody _plantBody;
     private NutrientStore _nutrients;
 
@@ -143,7 +151,7 @@ public sealed class OrganismEntity : MonoBehaviour
                 return true;
 
             case "water":
-                water = Mathf.Clamp01(ToFloat(value));
+                water = Mathf.Max(0f, ToFloat(value));
                 errorMessage = null;
                 return true;
 
@@ -206,7 +214,9 @@ public sealed class OrganismEntity : MonoBehaviour
                 return true;
 
             case "water":
-                water = Mathf.Clamp01(water + (float)delta);
+                if (delta > 0) _waterGained += (float)delta;
+                else _waterSpent += (float)(-delta);
+                water = Mathf.Max(0f, water + (float)delta);
                 result = water;
                 errorMessage = null;
                 return true;
@@ -226,6 +236,13 @@ public sealed class OrganismEntity : MonoBehaviour
                 result = stress;
                 errorMessage = null;
                 return true;
+        }
+
+        string normalizedCustom = NormalizeKey(key);
+        if (normalizedCustom == "co2")
+        {
+            if (delta > 0) _co2Gained += (float)delta;
+            else _co2Spent += (float)(-delta);
         }
 
         if (_customState.TryGetValue(key ?? string.Empty, out object existing) &&

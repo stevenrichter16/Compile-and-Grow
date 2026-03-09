@@ -68,6 +68,7 @@ public sealed class GeneExecutionManager : MonoBehaviour
             // Age every organism by 1 each tick, advance maturity
             org.TryAddState("age", 1, out _, out _);
             org.TryAddState("maturity", 0.05, out _, out _);
+            org.ResetTickTracking();
 
             _bridge.SetOrganism(org);
 

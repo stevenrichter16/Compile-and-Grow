@@ -51,7 +51,7 @@ public static class PhotoModule
 
         double co2Factor = stomata * airCo2;
 
-        double waterFactor = 0.5;
+        double waterFactor = 0d;
         if (org.TryGetState("water", out object wVal) && TryConvertToDouble(wVal, out double wv))
             waterFactor = Clamp01(wv);
 

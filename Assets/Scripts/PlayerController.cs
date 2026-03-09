@@ -13,6 +13,7 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private float interactRadius = 0.5f;
     [SerializeField] private GameObject codeEditorRoot;
     [SerializeField] private SpriteRenderer promptRenderer;
+    [SerializeField] private DashboardManager dashboardManager;
 
     private CodeEditorView _editorView;
     private GrowlTerminalScreen _terminalScreen;
@@ -40,6 +41,8 @@ public sealed class PlayerController : MonoBehaviour
             {
                 if (_terminalScreen != null && _terminalScreen.IsDetailOverlayOpen)
                     return; // terminal's Update() handles this Escape
+                if (dashboardManager != null && dashboardManager.HandleEscape())
+                    return;
                 CloseTerminal();
             }
             return;
@@ -88,6 +91,7 @@ public sealed class PlayerController : MonoBehaviour
 
         _inputLocked = true;
         codeEditorRoot.SetActive(true);
+        dashboardManager?.CollapseSidebar();
 
         if (_editorView != null)
             _editorView.Focus();
@@ -98,6 +102,8 @@ public sealed class PlayerController : MonoBehaviour
 
     private void CloseTerminal()
     {
+        dashboardManager?.ExpandSidebar();
+
         if (codeEditorRoot != null)
             codeEditorRoot.SetActive(false);
 

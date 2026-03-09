@@ -10,6 +10,7 @@ public sealed class ResourceGrid : MonoBehaviour
     [SerializeField] private float worldTemperature = 22f;
     [SerializeField] private float worldMoisture = 0.5f;
     [SerializeField] private float airCo2 = 0.04f;
+    [SerializeField] private float soilWater = 0.5f;
 
     private readonly Dictionary<string, object> _customWorldValues = new Dictionary<string, object>(StringComparer.Ordinal);
 
@@ -28,6 +29,9 @@ public sealed class ResourceGrid : MonoBehaviour
                 return true;
             case "air_co2":
                 value = airCo2;
+                return true;
+            case "soil_water":
+                value = soilWater;
                 return true;
         }
 
@@ -76,6 +80,16 @@ public sealed class ResourceGrid : MonoBehaviour
                 airCo2 = Mathf.Max(0f, airCo2);
                 errorMessage = null;
                 return true;
+
+            case "soil_water":
+                if (!TryConvertToFloat(value, out soilWater))
+                {
+                    errorMessage = "world.soil_water expects a numeric value.";
+                    return false;
+                }
+                soilWater = Mathf.Clamp01(soilWater);
+                errorMessage = null;
+                return true;
         }
 
         _customWorldValues[key ?? string.Empty] = value;
@@ -111,6 +125,12 @@ public sealed class ResourceGrid : MonoBehaviour
                 result = airCo2;
                 errorMessage = null;
                 return true;
+
+            case "soil_water":
+                soilWater = Mathf.Clamp01(soilWater + (float)delta);
+                result = soilWater;
+                errorMessage = null;
+                return true;
         }
 
         if (_customWorldValues.TryGetValue(key ?? string.Empty, out object existing) &&
@@ -139,6 +159,7 @@ public sealed class ResourceGrid : MonoBehaviour
             ["temperature"] = worldTemperature,
             ["moisture"] = worldMoisture,
             ["air_co2"] = airCo2,
+            ["soil_water"] = soilWater,
         };
 
         foreach (KeyValuePair<string, object> pair in _customWorldValues)

@@ -28,10 +28,25 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     // Tick mode
     private bool _ticking;
     private long _tickCount;
-    private OrganismEntity _sandboxOrganism;
-    private BiologicalContext _bioContext;
     private GrowthTickManager _tickManager;
     private TMP_Text _tickBtnLabel;
+
+    // Multi-file tabs
+    private struct GrowlFile
+    {
+        public string name;
+        public string source;
+        public OrganismEntity organism;
+        public BiologicalContext bioContext;
+    }
+
+    private readonly List<GrowlFile> _files = new List<GrowlFile>();
+    private int _activeFileIndex = -1;
+    private int _fileCounter = 1;
+    private GameObject _fileTabBar;
+
+    private static readonly string[] FileColors =
+        { "#66AACC", "#CC66AA", "#AACC66", "#CC9966", "#66CCAA", "#AA66CC", "#CCCC66", "#66AAAA" };
 
     // Detail overlay
     private GameObject _detailOverlay;
@@ -42,6 +57,7 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private ResourceGrid _resourceGrid;
     private TMP_Text _detailIOText;
     private TMP_Text _detailEnvText;
+    private Image _detailHealthBar;
     private TMP_InputField _skipTickInput;
     private bool _fastForwarding;
 
@@ -63,6 +79,7 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
         public OrganismEntity organism;
         public UIPlantGraphic graphic;
         public TMP_Text nameLabel;
+        public Image healthBar;
         public GameObject cellRoot;
     }
 
@@ -75,7 +92,9 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
 @role(""intake"")
 fn intake():
-    phase ""seedling""(0, 0.1):
+    phase ""seedling""(0, 0.3):
+        root.grow_down(1)
+    phase ""seedling""(0.3, 0.7):
         root.grow_down(1)
     root.absorb(""water"")
     leaf.absorb_chemical(""co2"")
@@ -85,13 +104,14 @@ fn structure():
     phase ""seedling""(0, 0.1):
         stem.grow_up(1)
 
-    phase ""more leaves""(0.1, 1.0):
-        leaf.grow(4)
+    phase ""more leaves""(0.1, 0.4):
+        leaf.grow(1)
 
 @role(""energy"")
 fn energy():
     photo.absorb_light()
-    leaf.open_stomata(1.0)
+
+    leaf.open_stomata(0.1)
 
 #@role(""output"")
 #fn output():
@@ -132,14 +152,22 @@ fn main():
 
     private void Start()
     {
-        if (_editor != null)
-            _editor.Text = DefaultProgram;
+        if (_editor == null) return;
+        _files.Add(new GrowlFile { name = "Sprout", source = DefaultProgram });
+        _activeFileIndex = 0;
+        _editor.Text = DefaultProgram;
     }
 
     private void OnDestroy()
     {
         if (_ticking)
             StopTicking();
+
+        for (int i = 0; i < _files.Count; i++)
+        {
+            if (_files[i].organism != null)
+                Destroy(_files[i].organism.gameObject);
+        }
 
         if (_editor != null)
         {
@@ -210,6 +238,9 @@ fn main():
 
         // --- Tab bar ---
         BuildTabBar(panel.transform);
+
+        // --- File tab bar ---
+        BuildFileTabBar(panel.transform);
 
         // --- Code panel (wraps editor + output side by side, buttons below) ---
         _codePanel = CreateUIObject("CodePanel", panel.transform);
@@ -552,6 +583,14 @@ fn main():
         var closeBtn = CreateButton("X", headerBar.transform, 32, 28);
         closeBtn.GetComponent<Button>().onClick.AddListener(HidePlantDetail);
 
+        // Health bar
+        var detailHealthGo = CreateUIObject("DetailHealthBar", detailPanel.transform);
+        _detailHealthBar = detailHealthGo.AddComponent<Image>();
+        _detailHealthBar.color = Color.green;
+        _detailHealthBar.raycastTarget = false;
+        var detailHealthLE = detailHealthGo.AddComponent<LayoutElement>();
+        detailHealthLE.preferredHeight = 4;
+
         // Content area (two-column: graphic left, parts list right)
         var contentArea = CreateUIObject("ContentArea", detailPanel.transform);
         var contentAreaHlg = contentArea.AddComponent<HorizontalLayoutGroup>();
@@ -677,6 +716,8 @@ fn main():
         _detailGraphic.SetBody(organism.Body);
         _detailGraphic.Refresh();
         _detailNameLabel.text = organism.OrganismName ?? "Unnamed";
+        if (_detailHealthBar != null)
+            _detailHealthBar.color = GrowthHealthColor(CalcGrowthHealth(organism));
         RefreshPartsList();
         RefreshDetailInfo();
         _detailOverlay.SetActive(true);
@@ -699,6 +740,7 @@ fn main():
         _showingPlantsTab = showPlants;
         _codePanel.SetActive(!showPlants);
         _plantsPanel.SetActive(showPlants);
+        if (_fileTabBar != null) _fileTabBar.SetActive(!showPlants);
 
         _codeTabImg.color = showPlants ? TabInactive : TabActive;
         _plantsTabImg.color = showPlants ? TabActive : TabInactive;
@@ -715,6 +757,162 @@ fn main():
 
         if (showPlants)
             RefreshPlantsGrid();
+    }
+
+    // --- File tabs ---
+
+    private void BuildFileTabBar(Transform parent)
+    {
+        _fileTabBar = CreateUIObject("FileTabBar", parent);
+        var le = _fileTabBar.AddComponent<LayoutElement>();
+        le.preferredHeight = 28;
+        le.flexibleWidth = 1;
+
+        var hlg = _fileTabBar.AddComponent<HorizontalLayoutGroup>();
+        hlg.spacing = 2;
+        hlg.childAlignment = TextAnchor.MiddleLeft;
+        hlg.childForceExpandWidth = false;
+        hlg.childForceExpandHeight = false;
+        hlg.childControlWidth = true;
+        hlg.childControlHeight = true;
+
+        RebuildFileTabBar();
+    }
+
+    private void RebuildFileTabBar()
+    {
+        if (_fileTabBar == null) return;
+
+        for (int i = _fileTabBar.transform.childCount - 1; i >= 0; i--)
+            Destroy(_fileTabBar.transform.GetChild(i).gameObject);
+
+        for (int i = 0; i < _files.Count; i++)
+            CreateFileTab(i);
+
+        var addBtn = CreateButton("+", _fileTabBar.transform, 28, 24);
+        addBtn.GetComponent<Button>().onClick.AddListener(AddNewFile);
+    }
+
+    private void CreateFileTab(int index)
+    {
+        bool active = index == _activeFileIndex;
+        var go = CreateUIObject("FileTab_" + index, _fileTabBar.transform);
+
+        var img = go.AddComponent<Image>();
+        img.color = active ? TabActive : TabInactive;
+
+        var hlg = go.AddComponent<HorizontalLayoutGroup>();
+        hlg.spacing = 2;
+        hlg.padding = new RectOffset(6, 4, 0, 0);
+        hlg.childAlignment = TextAnchor.MiddleCenter;
+        hlg.childForceExpandWidth = false;
+        hlg.childForceExpandHeight = false;
+        hlg.childControlWidth = true;
+        hlg.childControlHeight = true;
+
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredHeight = 34;
+        le.minWidth = 60;
+
+        var nameGo = CreateUIObject("Name", go.transform);
+        var nameTmp = nameGo.AddComponent<TextMeshProUGUI>();
+        nameTmp.text = _files[index].name;
+        nameTmp.fontSize = 12;
+        nameTmp.alignment = TextAlignmentOptions.MidlineLeft;
+        nameTmp.enableWordWrapping = false;
+        nameTmp.color = active ? new Color(0.9f, 0.9f, 0.95f, 1f) : new Color(0.6f, 0.6f, 0.65f, 1f);
+        var nameLe = nameGo.AddComponent<LayoutElement>();
+        nameLe.flexibleWidth = 1;
+        nameLe.preferredHeight = 34;
+
+        int capturedIndex = index;
+        var btn = go.AddComponent<Button>();
+        btn.transition = Selectable.Transition.None;
+        btn.onClick.AddListener(() => SwitchToFile(capturedIndex));
+
+        if (_files.Count > 1)
+        {
+            var closeGo = CreateUIObject("Close", go.transform);
+            var closeTmp = closeGo.AddComponent<TextMeshProUGUI>();
+            closeTmp.text = "x";
+            closeTmp.fontSize = 11;
+            closeTmp.alignment = TextAlignmentOptions.Center;
+            closeTmp.color = new Color(0.5f, 0.5f, 0.55f, 1f);
+            var closeLe = closeGo.AddComponent<LayoutElement>();
+            closeLe.preferredWidth = 18;
+            closeLe.preferredHeight = 34;
+
+            var closeBtn = closeGo.AddComponent<Button>();
+            closeBtn.transition = Selectable.Transition.None;
+            int ci = capturedIndex;
+            closeBtn.onClick.AddListener(() => CloseFile(ci));
+        }
+    }
+
+    private void SwitchToFile(int index)
+    {
+        if (index < 0 || index >= _files.Count || index == _activeFileIndex) return;
+        SaveActiveFileText();
+        _activeFileIndex = index;
+        _editor.Text = _files[_activeFileIndex].source;
+        RebuildFileTabBar();
+    }
+
+    private void SaveActiveFileText()
+    {
+        if (_activeFileIndex < 0 || _activeFileIndex >= _files.Count || _editor == null) return;
+        var f = _files[_activeFileIndex];
+        f.source = _editor.Text;
+        _files[_activeFileIndex] = f;
+    }
+
+    private void AddNewFile()
+    {
+        SaveActiveFileText();
+        _fileCounter++;
+        string name = "Plant " + _fileCounter;
+        string template =
+@"# " + name + @"
+
+@role(""intake"")
+fn intake():
+    root.absorb(""water"")
+
+@role(""energy"")
+fn energy():
+    photo.absorb_light()
+
+fn main():
+    intake()
+    energy()
+    a = org_get(""age"")
+    e = org_get(""energy"")
+    print(""tick "" + str(a) + ""  energy="" + str(e))
+";
+        _files.Add(new GrowlFile { name = name, source = template });
+        _activeFileIndex = _files.Count - 1;
+        _editor.Text = template;
+        RebuildFileTabBar();
+    }
+
+    private void CloseFile(int index)
+    {
+        if (_files.Count <= 1 || index < 0 || index >= _files.Count) return;
+
+        if (_files[index].organism != null)
+            Destroy(_files[index].organism.gameObject);
+
+        _files.RemoveAt(index);
+
+        if (_activeFileIndex >= _files.Count)
+            _activeFileIndex = _files.Count - 1;
+        else if (_activeFileIndex > index)
+            _activeFileIndex--;
+        else if (_activeFileIndex == index)
+            _activeFileIndex = Mathf.Min(index, _files.Count - 1);
+
+        _editor.Text = _files[_activeFileIndex].source;
+        RebuildFileTabBar();
     }
 
     private void RefreshPlantsGrid()
@@ -761,6 +959,7 @@ fn main():
                 cell.graphic.SetBody(cell.organism.Body);
                 cell.graphic.Refresh();
                 cell.nameLabel.text = cell.organism.OrganismName ?? "Unnamed";
+                cell.healthBar.color = GrowthHealthColor(CalcGrowthHealth(cell.organism));
             }
         }
     }
@@ -799,6 +998,14 @@ fn main():
         graphicLE.flexibleHeight = 1;
         graphicLE.minHeight = 120;
 
+        // Health bar
+        var healthGo = CreateUIObject("HealthBar", cellGo.transform);
+        var healthImg = healthGo.AddComponent<Image>();
+        healthImg.color = GrowthHealthColor(CalcGrowthHealth(organism));
+        healthImg.raycastTarget = false;
+        var healthLE = healthGo.AddComponent<LayoutElement>();
+        healthLE.preferredHeight = 4;
+
         // Name label
         var labelGo = CreateUIObject("NameLabel", cellGo.transform);
         var nameLabel = labelGo.AddComponent<TextMeshProUGUI>();
@@ -819,8 +1026,26 @@ fn main():
             organism = organism,
             graphic = graphic,
             nameLabel = nameLabel,
+            healthBar = healthImg,
             cellRoot = cellGo
         };
+    }
+
+    private static float CalcGrowthHealth(OrganismEntity o)
+    {
+        float h = 1f, w = 0.5f, s = 0f;
+        if (o.TryGetState("health", out var hv)) h = System.Convert.ToSingle(hv);
+        if (o.TryGetState("water", out var wv)) w = System.Convert.ToSingle(wv);
+        if (o.TryGetState("stress", out var sv)) s = System.Convert.ToSingle(sv);
+        return Mathf.Clamp01(0.4f * h + 0.3f * w + 0.3f * (1f - s));
+    }
+
+    private static Color GrowthHealthColor(float t)
+    {
+        // Red(0) → Yellow(0.5) → Green(1)
+        if (t < 0.5f)
+            return Color.Lerp(Color.red, Color.yellow, t * 2f);
+        return Color.Lerp(Color.yellow, Color.green, (t - 0.5f) * 2f);
     }
 
     private void RunCode()
@@ -896,16 +1121,25 @@ fn main():
             return;
         }
 
-        // Create organism for the terminal code to operate on
-        string orgName = ExtractOrganismName(_editor.Text);
-        var sandboxGo = new GameObject("[Terminal:" + orgName + "]");
-        sandboxGo.hideFlags = HideFlags.HideInHierarchy;
-        _sandboxOrganism = sandboxGo.AddComponent<OrganismEntity>();
-        _sandboxOrganism.TrySetState("name", orgName, out _);
+        SaveActiveFileText();
 
-        _bioContext = new BiologicalContext();
+        for (int i = 0; i < _files.Count; i++)
+        {
+            var f = _files[i];
+            string orgName = f.name;
+            var sandboxGo = new GameObject("[Terminal:" + orgName + "]");
+            sandboxGo.hideFlags = HideFlags.HideInHierarchy;
+            f.organism = sandboxGo.AddComponent<OrganismEntity>();
+            f.organism.TrySetState("name", orgName, out _);
+            f.bioContext = new BiologicalContext();
+            _files[i] = f;
+        }
+
         _tickCount = 0;
         _output = "<color=#AAAAAA>Ticking started...</color>\n";
+
+        DryRunCheck();
+
         if (_outputInput != null) _outputInput.text = _output;
 
         _tickManager.OnTickAdvanced += OnTickExecute;
@@ -913,80 +1147,178 @@ fn main():
         if (_tickBtnLabel != null) _tickBtnLabel.text = "Stop Tick";
     }
 
+    private void DryRunCheck()
+    {
+        const int dryRunTicks = 10;
+        var warnings = new List<string>();
+
+        var bridge = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+
+        for (int fi = 0; fi < _files.Count; fi++)
+        {
+            var f = _files[fi];
+            if (string.IsNullOrWhiteSpace(f.source)) continue;
+
+            // Create temporary clone organism
+            var tmpGo = new GameObject("[DryRun:" + f.name + "]");
+            tmpGo.hideFlags = HideFlags.HideAndDontSave;
+            var tmpOrg = tmpGo.AddComponent<OrganismEntity>();
+            tmpOrg.TrySetState("name", f.name, out _);
+            var tmpBio = new BiologicalContext();
+
+            string warning = null;
+
+            for (int t = 1; t <= dryRunTicks; t++)
+            {
+                tmpOrg.TryAddState("age", 1, out _, out _);
+                tmpOrg.TryAddState("maturity", 0.05, out _, out _);
+
+                bridge.ClearActionLog();
+                bridge.SetOrganism(tmpOrg);
+                tmpBio.CurrentTick = t;
+                bridge.SetBioContext(tmpBio);
+
+                GrowlRuntime.Execute(f.source, new RuntimeOptions
+                {
+                    AutoInvokeEntryFunction = autoInvokeEntryFunction,
+                    EntryFunctionName = entryFunctionName,
+                    MaxLoopIterations = maxLoopIterations,
+                    Host = bridge,
+                    BioContext = tmpBio,
+                });
+
+                // Check action log for failed grows
+                var actionLog = bridge.ActionLog;
+                for (int i = 0; i < actionLog.Count; i++)
+                {
+                    if (actionLog[i].Contains("failed: needs"))
+                    {
+                        warning = "tick " + t + ": " + actionLog[i];
+                        break;
+                    }
+                }
+                if (warning != null) break;
+
+                // Apply same maintenance cost
+                int partCount = tmpOrg.Body != null ? tmpOrg.Body.Parts.Count : 0;
+                float maintenanceCost = 0.02f + partCount * 0.002f;
+                tmpOrg.TryAddState("energy", -maintenanceCost, out _, out _);
+                tmpOrg.TryGetState("energy", out var postEnergy);
+                float e = postEnergy is float ef ? ef : postEnergy is double ed ? (float)ed : 0f;
+                if (e <= 0f)
+                {
+                    warning = "tick " + t + ": energy exhausted";
+                    break;
+                }
+            }
+
+            Destroy(tmpGo);
+
+            if (warning != null)
+            {
+                string colorTag = FileColors[fi % FileColors.Length];
+                warnings.Add("<color=" + colorTag + ">[" + f.name + "]</color> " + warning);
+            }
+        }
+
+        if (warnings.Count > 0)
+        {
+            _output += "<color=#CCAA44>⚠ Dry-run warning (first 10 ticks):</color>\n";
+            for (int i = 0; i < warnings.Count; i++)
+                _output += "<color=#CCAA44>  " + warnings[i] + "</color>\n";
+        }
+    }
+
     private void StopTicking()
     {
         if (_tickManager != null)
             _tickManager.OnTickAdvanced -= OnTickExecute;
 
-        if (_sandboxOrganism != null)
-            Destroy(_sandboxOrganism.gameObject);
+        for (int i = 0; i < _files.Count; i++)
+        {
+            var f = _files[i];
+            if (f.organism != null)
+                Destroy(f.organism.gameObject);
+            f.organism = null;
+            f.bioContext = null;
+            _files[i] = f;
+        }
 
-        _sandboxOrganism = null;
-        _bioContext = null;
         _ticking = false;
         if (_tickBtnLabel != null) _tickBtnLabel.text = "Start Tick";
     }
 
     private void OnTickExecute(long tick)
     {
-        if (_editor == null || _sandboxOrganism == null) return;
+        if (_editor == null) return;
 
-        string source = _editor.Text;
-        if (string.IsNullOrWhiteSpace(source)) return;
-
-        // Age the sandbox organism consistently with GeneExecutionManager
-        _sandboxOrganism.TryAddState("age", 1, out _, out _);
-        _sandboxOrganism.TryAddState("maturity", 0.05, out _, out _);
-
-        var bridge = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
-        bridge.ClearActionLog();
-        bridge.SetOrganism(_sandboxOrganism);
-        _bioContext.CurrentTick = tick;
-        bridge.SetBioContext(_bioContext);
-
-        RuntimeResult result = GrowlRuntime.Execute(source, new RuntimeOptions
-        {
-            AutoInvokeEntryFunction = autoInvokeEntryFunction,
-            EntryFunctionName = entryFunctionName,
-            MaxLoopIterations = maxLoopIterations,
-            Host = bridge,
-            BioContext = _bioContext,
-        });
-
+        SaveActiveFileText();
         _tickCount++;
 
-        // Build per-tick output
-        var lines = new List<string>();
+        _output += "<color=#888888>--- Tick " + _tickCount + " ---</color>\n";
 
-        if (result.Messages.Count > 0)
+        var bridge = GrowlRuntimeHostResolver.GetOrCreateHostBridge();
+
+        for (int fi = 0; fi < _files.Count; fi++)
         {
-            for (int i = 0; i < result.Messages.Count; i++)
-                lines.Add("<color=#FF6666>" + result.Messages[i] + "</color>");
+            var f = _files[fi];
+            if (f.organism == null || string.IsNullOrWhiteSpace(f.source)) continue;
+
+            string colorTag = FileColors[fi % FileColors.Length];
+            string prefix = "<color=" + colorTag + ">[" + f.name + "]</color> ";
+
+            f.organism.TryAddState("age", 1, out _, out _);
+            f.organism.TryAddState("maturity", 0.05, out _, out _);
+            f.organism.ResetTickTracking();
+
+            bridge.ClearActionLog();
+            bridge.SetOrganism(f.organism);
+            f.bioContext.CurrentTick = tick;
+            bridge.SetBioContext(f.bioContext);
+
+            RuntimeResult result = GrowlRuntime.Execute(f.source, new RuntimeOptions
+            {
+                AutoInvokeEntryFunction = autoInvokeEntryFunction,
+                EntryFunctionName = entryFunctionName,
+                MaxLoopIterations = maxLoopIterations,
+                Host = bridge,
+                BioContext = f.bioContext,
+            });
+
+            if (result.Messages.Count > 0)
+            {
+                for (int i = 0; i < result.Messages.Count; i++)
+                    _output += prefix + "<color=#FF6666>" + result.Messages[i] + "</color>\n";
+            }
+
+            for (int i = 0; i < result.OutputLines.Count; i++)
+                _output += prefix + result.OutputLines[i] + "\n";
+
+            var actionLog = bridge.ActionLog;
+            for (int i = 0; i < actionLog.Count; i++)
+                _output += prefix + "<color=#AABB99>" + actionLog[i] + "</color>\n";
+
+            // Biological maintenance — low passive cost per part
+            int partCount = f.organism.Body != null ? f.organism.Body.Parts.Count : 0;
+            float maintenanceCost = 0.02f + partCount * 0.002f;
+            f.organism.TryAddState("energy", -maintenanceCost, out _, out _);
+            f.organism.TryGetState("energy", out var postEnergy);
+            float eMaint = postEnergy is float emf ? emf : postEnergy is double emd ? (float)emd : 0f;
+            if (eMaint <= 0f)
+            {
+                f.organism.TryAddState("health", -0.01, out _, out _);
+                f.organism.TryAddState("stress", 0.005, out _, out _);
+                _output += prefix + "<color=#CC6644>⚠ starving: health -0.01, stress +0.005</color>\n";
+            }
         }
 
-        for (int i = 0; i < result.OutputLines.Count; i++)
-            lines.Add(result.OutputLines[i]);
-
-        // Append action log from bridge
-        var actionLog = bridge.ActionLog;
-        for (int i = 0; i < actionLog.Count; i++)
-            lines.Add("<color=#AABB99>" + actionLog[i] + "</color>");
-
-        // Always show tick header with actions
-        _output += "<color=#888888>--- Tick " + _tickCount + " ---</color>\n";
-        if (lines.Count > 0)
-            _output += string.Join("\n", lines) + "\n";
-
-        // Skip heavy UI updates during fast-forward; update text at end
         if (_fastForwarding) return;
 
         if (_outputInput != null) _outputInput.text = _output;
 
-        // Refresh plants grid if visible
         if (_showingPlantsTab && _plantsPanel.activeSelf)
             RefreshPlantsGrid();
 
-        // Refresh detail overlay if open
         if (IsDetailOverlayOpen && _detailOrganism != null)
         {
             _detailGraphic.SetBody(_detailOrganism.Body);
@@ -1015,6 +1347,9 @@ fn main():
     {
         if (_detailOrganism == null) return;
 
+        if (_detailHealthBar != null)
+            _detailHealthBar.color = GrowthHealthColor(CalcGrowthHealth(_detailOrganism));
+
         // --- Organism I/O ---
         if (_detailIOText != null)
         {
@@ -1029,14 +1364,17 @@ fn main():
             float maturity = snap.ContainsKey("maturity") ? System.Convert.ToSingle(snap["maturity"]) : 0f;
             long age = snap.ContainsKey("age") ? System.Convert.ToInt64(snap["age"]) : 0;
 
-            sb.AppendLine($"energy: {energy:F1}    water: {water:F2}");
-            sb.AppendLine($"health: {health:F0}%    stress: {stress:F2}");
+            float co2Val = snap.ContainsKey("co2") ? System.Convert.ToSingle(snap["co2"]) : 0f;
+
+            sb.AppendLine($"energy: {energy:F1}    water: {water:F2} <color=#88AA88>+{_detailOrganism.WaterGained:F2}</color> <color=#AA8888>-{_detailOrganism.WaterSpent:F2}</color>");
+            sb.AppendLine($"health: {health:F0}%    co2: {co2Val:F2} <color=#88AA88>+{_detailOrganism.Co2Gained:F2}</color> <color=#AA8888>-{_detailOrganism.Co2Spent:F2}</color>");
+            sb.AppendLine($"stress: {stress:F2}");
             sb.Append($"maturity: {maturity:F1}    age: {age}");
 
             // Custom/absorbed resources (skip internal complex objects)
             var skipKeys = new HashSet<string>(System.StringComparer.Ordinal)
                 { "name", "alive", "age", "maturity", "energy", "water", "health", "stress",
-                  "memory", "parts", "morphology", "nutrients" };
+                  "memory", "parts", "morphology", "nutrients", "co2" };
             var customEntries = new List<string>();
             foreach (var kv in snap)
             {
@@ -1284,22 +1622,6 @@ fn main():
             return true;
         }
         return false;
-    }
-
-    private static string ExtractOrganismName(string source)
-    {
-        if (string.IsNullOrEmpty(source)) return "Terminal";
-        string[] lines = source.Split('\n');
-        for (int i = 0; i < lines.Length; i++)
-        {
-            string trimmed = lines[i].TrimStart();
-            if (trimmed.StartsWith("class "))
-            {
-                string name = ExtractIdentifier(trimmed, 6);
-                if (!string.IsNullOrEmpty(name)) return name;
-            }
-        }
-        return "Terminal";
     }
 
     // --- UI helpers ---

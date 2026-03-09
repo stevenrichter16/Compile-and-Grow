@@ -20,6 +20,11 @@ public static class LeafModule
         float cost = area * GrowthEnergyCostPerCm2;
         if (!TrySpendEnergy(org, cost)) return null;
 
+        // Inherit stomata from existing leaves before creating the new one
+        float inheritedStomata = GetAverageStomataOpenness(body);
+        if (body.FindPartsByType(LeafType).Count == 0)
+            inheritedStomata = 0.5f;
+
         // Find parent branch/stem to attach to
         PlantPart parent = null;
         if (!string.IsNullOrEmpty(fromPart))
@@ -32,7 +37,7 @@ public static class LeafModule
         if (leaf == null) return null;
 
         leaf.TrySetProperty("shape", "flat");
-        leaf.TrySetProperty("stomata_openness", 0.5);
+        leaf.TrySetProperty("stomata_openness", (double)inheritedStomata);
         leaf.TrySetProperty("track_light", false);
         leaf.TrySetProperty("coating", "none");
 
@@ -55,6 +60,11 @@ public static class LeafModule
         if (parent == null)
             parent = body.FindPart("stem_main");
 
+        // Inherit stomata from existing leaves before creating new ones
+        float inheritedStomata = GetAverageStomataOpenness(body);
+        if (body.FindPartsByType(LeafType).Count == 0)
+            inheritedStomata = 0.5f;
+
         var results = new List<Dictionary<string, object>>(number);
         for (int i = 0; i < number; i++)
         {
@@ -63,7 +73,7 @@ public static class LeafModule
             if (leaf == null) continue;
 
             leaf.TrySetProperty("shape", "flat");
-            leaf.TrySetProperty("stomata_openness", 0.5);
+            leaf.TrySetProperty("stomata_openness", (double)inheritedStomata);
 
             if (parent != null)
                 body.AttachPart(name, parent.Name);
@@ -217,8 +227,12 @@ public static class LeafModule
         PlantPart leaf = body.CreatePart(partName, LeafType, 1f, 0.02f);
         if (leaf == null) return null;
 
+        float inheritedStomata = GetAverageStomataOpenness(body);
+        if (body.FindPartsByType(LeafType).Count <= 1) // only the one we just created
+            inheritedStomata = 0.5f;
+
         leaf.TrySetProperty("shape", "flat");
-        leaf.TrySetProperty("stomata_openness", 0.5);
+        leaf.TrySetProperty("stomata_openness", (double)inheritedStomata);
         leaf.TrySetProperty("regrown", true);
 
         if (parent != null)

@@ -1557,6 +1557,13 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 if (TryGetArg(args, index: 1, name: "from_part", out RuntimeCallArgument fpArg) && fpArg.Value != null)
                     fromPart = fpArg.Value.ToString();
                 result = LeafModule.Grow(body, organismEntity, area, fromPart);
+                if (result == null && area > 0f)
+                {
+                    float cost = area * 0.3f;
+                    organismEntity.TryGetState("energy", out var eVal);
+                    float have = eVal is float ef ? ef : eVal is double ed ? (float)ed : 0f;
+                    Log($"  ⚠ leaf.grow failed: needs {cost:F1} energy, have {have:F1}");
+                }
                 return true;
             }
             case "leaf_grow_count":
@@ -1567,6 +1574,13 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 if (TryGetArg(args, index: 2, name: "from_part", out RuntimeCallArgument fpArg) && fpArg.Value != null)
                     fromPart = fpArg.Value.ToString();
                 result = LeafModule.GrowCount(body, organismEntity, number, sizeEach, fromPart);
+                if (result == null && number > 0 && sizeEach > 0f)
+                {
+                    float cost = number * sizeEach * 0.3f;
+                    organismEntity.TryGetState("energy", out var eVal);
+                    float have = eVal is float ef ? ef : eVal is double ed ? (float)ed : 0f;
+                    Log($"  ⚠ leaf.grow_count failed: needs {cost:F1} energy, have {have:F1}");
+                }
                 return true;
             }
             case "leaf_reshape":

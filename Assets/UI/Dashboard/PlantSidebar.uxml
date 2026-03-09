@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:VisualElement name="sidebar" class="sidebar">
+        <ui:VisualElement class="sidebar__header">
+            <ui:Label class="sidebar__title" text="Plants" />
+            <ui:Label name="plant-count" class="sidebar__count" text="0" />
+        </ui:VisualElement>
+        <ui:VisualElement class="sidebar__separator" />
+        <ui:ScrollView name="card-scroll" class="sidebar__scroll" />
+    </ui:VisualElement>
+</ui:UXML>

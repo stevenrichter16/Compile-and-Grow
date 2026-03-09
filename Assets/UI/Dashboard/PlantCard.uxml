@@ -1,0 +1,32 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:VisualElement name="plant-card" class="plant-card">
+        <ui:VisualElement class="plant-card__header">
+            <ui:VisualElement name="status-dot" class="plant-card__status-dot" />
+            <ui:Label name="plant-name" class="plant-card__name" text="Plant" />
+            <ui:Label name="plant-age" class="plant-card__age" text="t:0" />
+        </ui:VisualElement>
+        <ui:VisualElement class="plant-card__stats">
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="E" />
+                <ui:Label name="energy-value" class="stat-row__value" />
+                <ui:Label name="energy-arrow" class="stat-row__arrow" />
+            </ui:VisualElement>
+            <ui:Label name="energy-formula" class="stat-row__formula" text="leafArea &#xD7; light &#xD7; CO&#x2082; &#xD7; water &#xD7; 2" />
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="CO&#x2082;" />
+                <ui:Label name="co2-value" class="stat-row__value" />
+                <ui:Label name="co2-arrow" class="stat-row__arrow" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="W" />
+                <ui:Label name="water-value" class="stat-row__value" />
+                <ui:Label name="water-arrow" class="stat-row__arrow" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="H" />
+                <ui:Label name="health-value" class="stat-row__value" />
+                <ui:Label name="health-arrow" class="stat-row__arrow" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

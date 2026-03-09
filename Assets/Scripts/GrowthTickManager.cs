@@ -31,7 +31,7 @@ public sealed class GrowthTickManager : MonoBehaviour
 
     [Header("Tick")]
     [SerializeField] private bool autoTick = true;
-    [SerializeField] private float secondsPerTick = 5f;
+    [SerializeField] private float secondsPerTick = 1f;
     [SerializeField] private long currentTick;
 
     [Header("World Counters")]

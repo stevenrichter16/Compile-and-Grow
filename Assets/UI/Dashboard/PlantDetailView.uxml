@@ -1,0 +1,24 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:VisualElement name="detail-view" class="detail-view">
+        <!-- Header -->
+        <ui:VisualElement class="detail-view__header">
+            <ui:Button name="back-btn" class="detail-view__back-btn" text="← Back" />
+            <ui:Label name="detail-name" class="detail-view__name" text="Plant" />
+            <ui:VisualElement name="detail-status-dot" class="detail-view__status-dot" />
+        </ui:VisualElement>
+
+        <!-- Nav dots -->
+        <ui:VisualElement name="nav-strip" class="detail-view__nav-strip" />
+
+        <!-- Scrollable sections -->
+        <ui:ScrollView name="detail-scroll" class="detail-view__scroll">
+            <ui:VisualElement name="section-vitals" />
+            <ui:VisualElement name="section-genes" />
+            <ui:VisualElement name="section-resources" />
+            <ui:VisualElement name="section-environment" />
+            <ui:VisualElement name="section-parts" />
+            <ui:VisualElement name="section-nutrients" />
+            <ui:VisualElement name="section-reproduction" />
+        </ui:ScrollView>
+    </ui:VisualElement>
+</ui:UXML>

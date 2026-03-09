@@ -117,7 +117,7 @@ public static class RootModule
 
         // Get soil concentration from world
         string soilKey = "soil_" + resource.Trim().ToLowerInvariant();
-        double soilConcentration = 0.5; // default moderate availability
+        double soilConcentration = 0d;
         if (world.TryGetWorldValue(soilKey, out object soilVal) && TryConvertToDouble(soilVal, out double sv))
             soilConcentration = sv;
 

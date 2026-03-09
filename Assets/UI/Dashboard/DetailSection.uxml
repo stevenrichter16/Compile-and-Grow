@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:VisualElement name="section" class="section">
+        <ui:VisualElement name="section-header" class="section__header">
+            <ui:Label name="chevron" class="section__chevron" text="▼" />
+            <ui:Label name="section-title" class="section__title" text="Section" />
+            <ui:Label name="section-summary" class="section__summary" text="" />
+        </ui:VisualElement>
+        <ui:VisualElement name="section-body" class="section__body" />
+    </ui:VisualElement>
+</ui:UXML>
