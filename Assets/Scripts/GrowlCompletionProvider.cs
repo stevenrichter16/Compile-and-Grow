@@ -285,8 +285,36 @@ public sealed class GrowlCompletionProvider : ICompletionProvider
             I("season",     CompletionKind.Function, "season()"),
             I("time_of_day", CompletionKind.Function, "time_of_day()"),
 
-            // Namespace
-            I("math", CompletionKind.Variable, "math namespace"),
+            // Bio globals
+            I("synthesize",      CompletionKind.Function, "synthesize(base, density?, water?, growth?)"),
+            I("produce",         CompletionKind.Function, "produce(product, location?, rate?)"),
+            I("emit",            CompletionKind.Function, "emit(product, rate?)"),
+            I("emit_signal",     CompletionKind.Function, "emit_signal(type, intensity?, radius?)"),
+            I("org_get",         CompletionKind.Function, "org_get(key, default?)"),
+            I("org_set",         CompletionKind.Function, "org_set(key, value)"),
+            I("org_add",         CompletionKind.Function, "org_add(key, delta)"),
+            I("org_damage",      CompletionKind.Function, "org_damage(amount)"),
+            I("org_heal",        CompletionKind.Function, "org_heal(amount)"),
+            I("org_memory_get",  CompletionKind.Function, "org_memory_get(key, default?)"),
+            I("org_memory_set",  CompletionKind.Function, "org_memory_set(key, value)"),
+            I("world_get",       CompletionKind.Function, "world_get(key, default?)"),
+            I("world_set",       CompletionKind.Function, "world_set(key, value)"),
+            I("world_add",       CompletionKind.Function, "world_add(key, delta)"),
+            I("spawn_seed",      CompletionKind.Function, "spawn_seed(count?)"),
+            I("spawn",           CompletionKind.Function, "spawn(class, source, position?)"),
+            I("parts_find",      CompletionKind.Function, "parts_find(name)"),
+            I("parts_find_type", CompletionKind.Function, "parts_find_type(type)"),
+            I("parts_count",     CompletionKind.Function, "parts_count(type)"),
+
+            // Namespaces / modules
+            I("math",      CompletionKind.Variable, "math namespace"),
+            I("root",      CompletionKind.Variable, "root module"),
+            I("stem",      CompletionKind.Variable, "stem module"),
+            I("leaf",      CompletionKind.Variable, "leaf module"),
+            I("photo",     CompletionKind.Variable, "photo module"),
+            I("morph",     CompletionKind.Variable, "morph module"),
+            I("defense",   CompletionKind.Variable, "defense module"),
+            I("reproduce", CompletionKind.Variable, "reproduce module"),
         };
         return list;
     }
@@ -421,6 +449,138 @@ public sealed class GrowlCompletionProvider : ICompletionProvider
                     anyList.Add(item);
             }
         }
+
+        // ── Biological modules ────────────────────────────────────────
+
+        dict["root"] = new List<CompletionItem>
+        {
+            I("grow_down",          CompletionKind.Method, "grow_down(distance?)"),
+            I("grow_up",            CompletionKind.Method, "grow_up(distance?)"),
+            I("grow_wide",          CompletionKind.Method, "grow_wide(distance?)"),
+            I("grow_toward",        CompletionKind.Method, "grow_toward(direction, distance?)"),
+            I("branch",             CompletionKind.Method, "branch(count?, from_part?)"),
+            I("thicken",            CompletionKind.Method, "thicken(part_name, amount)"),
+            I("absorb",             CompletionKind.Method, "absorb(resource)"),
+            I("absorb_all",         CompletionKind.Method, "absorb_all()"),
+            I("absorb_filtered",    CompletionKind.Method, "absorb_filtered(resources)"),
+            I("set_absorption_rate", CompletionKind.Method, "set_absorption_rate(resource, rate)"),
+            I("deposit",            CompletionKind.Method, "deposit(resource, amount)"),
+            I("exude",              CompletionKind.Method, "exude(chemical, amount)"),
+            I("anchor",             CompletionKind.Method, "anchor(strength)"),
+            I("connect_fungi",      CompletionKind.Method, "connect_fungi(network?)"),
+            I("sense_depth",        CompletionKind.Method, "sense_depth()"),
+            I("sense_moisture",     CompletionKind.Method, "sense_moisture(direction?)"),
+            I("sense_obstacle",     CompletionKind.Method, "sense_obstacle(direction?)"),
+            I("sense_neighbors",    CompletionKind.Method, "sense_neighbors()"),
+        };
+
+        dict["stem"] = new List<CompletionItem>
+        {
+            I("grow_up",        CompletionKind.Method, "grow_up(distance?)"),
+            I("grow_horizontal", CompletionKind.Method, "grow_horizontal(distance, direction?)"),
+            I("grow_thick",     CompletionKind.Method, "grow_thick(amount)"),
+            I("branch",         CompletionKind.Method, "branch(count?, height?, angle?)"),
+            I("grow_segment",   CompletionKind.Method, "grow_segment(length, angle, from_part?)"),
+            I("split",          CompletionKind.Method, "split(count?)"),
+            I("set_rigidity",   CompletionKind.Method, "set_rigidity(value)"),
+            I("set_material",   CompletionKind.Method, "set_material(type?)"),
+            I("store_water",    CompletionKind.Method, "store_water(amount)"),
+            I("store_energy",   CompletionKind.Method, "store_energy(amount)"),
+            I("attach_to",      CompletionKind.Method, "attach_to(target?)"),
+            I("support_weight", CompletionKind.Method, "support_weight(part_name)"),
+            I("shed",           CompletionKind.Method, "shed(part_name)"),
+            I("heal",           CompletionKind.Method, "heal(part_name, rate)"),
+            I("set_color",      CompletionKind.Method, "set_color(r, g, b)"),
+            I("set_texture",    CompletionKind.Method, "set_texture(type?)"),
+            I("produce_bark",   CompletionKind.Method, "produce_bark(thickness)"),
+            I("produce_wax",    CompletionKind.Method, "produce_wax(thickness)"),
+        };
+
+        dict["leaf"] = new List<CompletionItem>
+        {
+            I("grow",              CompletionKind.Method, "grow(area, from_part?)"),
+            I("grow_count",        CompletionKind.Method, "grow_count(number, size_each, from_part?)"),
+            I("reshape",           CompletionKind.Method, "reshape(part_name, shape?)"),
+            I("orient",            CompletionKind.Method, "orient(direction?)"),
+            I("track_light",       CompletionKind.Method, "track_light(enabled)"),
+            I("set_angle_range",   CompletionKind.Method, "set_angle_range(min, max)"),
+            I("open_stomata",      CompletionKind.Method, "open_stomata(amount)"),
+            I("close_stomata",     CompletionKind.Method, "close_stomata()"),
+            I("set_stomata_schedule", CompletionKind.Method, "set_stomata_schedule(schedule)"),
+            I("filter_gas",        CompletionKind.Method, "filter_gas(gas, action?)"),
+            I("set_color",         CompletionKind.Method, "set_color(r, g, b)"),
+            I("set_coating",       CompletionKind.Method, "set_coating(type?)"),
+            I("set_lifespan",      CompletionKind.Method, "set_lifespan(ticks)"),
+            I("shed",              CompletionKind.Method, "shed(part_name?)"),
+            I("regrow",            CompletionKind.Method, "regrow(part_name)"),
+            I("absorb_moisture",   CompletionKind.Method, "absorb_moisture()"),
+            I("absorb_nutrients",  CompletionKind.Method, "absorb_nutrients(resource)"),
+            I("absorb_chemical",   CompletionKind.Method, "absorb_chemical(chemical)"),
+        };
+
+        dict["photo"] = new List<CompletionItem>
+        {
+            I("absorb_light",       CompletionKind.Method, "absorb_light(efficiency?)"),
+            I("set_pigment",        CompletionKind.Method, "set_pigment(type?)"),
+            I("boost_chlorophyll",  CompletionKind.Method, "boost_chlorophyll(factor?)"),
+            I("set_light_saturation", CompletionKind.Method, "set_light_saturation(threshold)"),
+            I("chemosynthesis",     CompletionKind.Method, "chemosynthesis(source)"),
+            I("thermosynthesis",    CompletionKind.Method, "thermosynthesis(source)"),
+            I("radiosynthesis",     CompletionKind.Method, "radiosynthesis()"),
+            I("parasitic",          CompletionKind.Method, "parasitic(target?)"),
+            I("decompose",          CompletionKind.Method, "decompose()"),
+            I("set_metabolism",     CompletionKind.Method, "set_metabolism(rate?)"),
+            I("store_energy",       CompletionKind.Method, "store_energy(amount, location?)"),
+            I("retrieve_energy",    CompletionKind.Method, "retrieve_energy(amount, location?)"),
+            I("share_energy",       CompletionKind.Method, "share_energy(target, amount)"),
+        };
+
+        dict["morph"] = new List<CompletionItem>
+        {
+            I("create_part",       CompletionKind.Method, "create_part(name, type, size?, energy_cost?)"),
+            I("remove_part",       CompletionKind.Method, "remove_part(name)"),
+            I("attach",            CompletionKind.Method, "attach(part, to_part, position?)"),
+            I("grow_part",         CompletionKind.Method, "grow_part(part_name, property, amount)"),
+            I("shrink_part",       CompletionKind.Method, "shrink_part(part_name, property, amount)"),
+            I("set_symmetry",      CompletionKind.Method, "set_symmetry(type)"),
+            I("set_growth_pattern", CompletionKind.Method, "set_growth_pattern(type)"),
+            I("set_surface",       CompletionKind.Method, "set_surface(part_name, properties?)"),
+            I("emit_light",        CompletionKind.Method, "emit_light(intensity, r?, g?, b?, part?)"),
+            I("orient_toward",     CompletionKind.Method, "orient_toward(direction)"),
+            I("contract",          CompletionKind.Method, "contract(part_name, amount)"),
+            I("expand",            CompletionKind.Method, "expand(part_name, amount)"),
+            I("pulse",             CompletionKind.Method, "pulse(part_name, frequency, amplitude)"),
+        };
+
+        dict["defense"] = new List<CompletionItem>
+        {
+            I("grow_thorns",           CompletionKind.Method, "grow_thorns(part?, sharpness, density)"),
+            I("grow_armor",            CompletionKind.Method, "grow_armor(part_name, thickness)"),
+            I("grow_camouflage",       CompletionKind.Method, "grow_camouflage(environment?)"),
+            I("produce_toxin",         CompletionKind.Method, "produce_toxin(type, potency?, location?)"),
+            I("produce_repellent",     CompletionKind.Method, "produce_repellent(type, radius?)"),
+            I("produce_attractant",    CompletionKind.Method, "produce_attractant(type, target, radius?)"),
+            I("sticky_trap",           CompletionKind.Method, "sticky_trap(part_name, strength?)"),
+            I("resist_disease",        CompletionKind.Method, "resist_disease(type, strength?)"),
+            I("quarantine_part",       CompletionKind.Method, "quarantine_part(part_name)"),
+            I("fever",                 CompletionKind.Method, "fever(amount)"),
+            I("on_damage",             CompletionKind.Method, "on_damage(callback)"),
+            I("on_neighbor_distress",  CompletionKind.Method, "on_neighbor_distress(callback)"),
+        };
+
+        dict["reproduce"] = new List<CompletionItem>
+        {
+            I("generate_seeds",  CompletionKind.Method, "generate_seeds(count?, energy_per_seed?)"),
+            I("set_dispersal",   CompletionKind.Method, "set_dispersal(method, params?)"),
+            I("set_germination", CompletionKind.Method, "set_germination(conditions)"),
+            I("mutate",          CompletionKind.Method, "mutate(variance)"),
+            I("mutate_gene",     CompletionKind.Method, "mutate_gene(slot_name, variance?)"),
+            I("crossbreed",      CompletionKind.Method, "crossbreed(other_org)"),
+            I("clone",           CompletionKind.Method, "clone(direction?)"),
+            I("fragment",        CompletionKind.Method, "fragment(part_name)"),
+            I("set_lifecycle",   CompletionKind.Method, "set_lifecycle(type)"),
+            I("set_maturity_age", CompletionKind.Method, "set_maturity_age(ticks)"),
+        };
 
         dict["_any"] = anyList;
         return dict;
