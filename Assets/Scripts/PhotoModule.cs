@@ -13,8 +13,10 @@ public static class PhotoModule
     // ── Photosynthesis ──────────────────────────────────────────────
 
     /// <summary>
-    /// photo.absorb_light() — standard photosynthesis.
-    /// energy = leafArea * baseRate * lightCapture * co2Factor * waterFactor
+    /// photo.absorb_light() — stoichiometric photosynthesis.
+    /// 6 CO₂ + 6 H₂O + light → C₆H₁₂O₆ + 6 O₂
+    /// CO₂ enters from air via stomata (not consumed from storage).
+    /// O₂ is produced from splitting water and emitted to air.
     /// </summary>
     public static double AbsorbLight(PlantBody body, OrganismEntity org, ResourceGrid world, double efficiencyOverride)
     {
@@ -23,6 +25,7 @@ public static class PhotoModule
 
         float stomata = LeafModule.GetAverageStomataOpenness(body);
 
+        // ── Light capture (unchanged) ───────────────────────────────
         double lightIntensity = 0.7;
         if (world.TryGetWorldValue("power", out object lVal) && TryConvertToDouble(lVal, out double lv))
             lightIntensity = Clamp01(lv / 100.0);
@@ -45,28 +48,36 @@ public static class PhotoModule
 
         lightCapture = Clamp01(lightCapture);
 
+        // ── CO₂ from air (environmental constant, not consumed) ─────
         double airCo2 = 0.04;
         if (world.TryGetWorldValue("air_co2", out object co2Val) && TryConvertToDouble(co2Val, out double co2))
             airCo2 = co2;
 
-        double co2Factor = stomata * airCo2;
+        // ── Stoichiometric reaction scale ───────────────────────────
+        double reactionScale = leafArea * stomata * airCo2 * lightCapture;
 
-        double waterFactor = 0d;
-        if (org.TryGetState("water", out object wVal) && TryConvertToDouble(wVal, out double wv))
-            waterFactor = Clamp01(wv);
-
-        double efficiency;
         if (efficiencyOverride >= 0d && efficiencyOverride <= 1d)
-            efficiency = efficiencyOverride;
-        else
-            efficiency = lightCapture * co2Factor * waterFactor;
+            reactionScale = leafArea * efficiencyOverride;
 
-        double energyProduced = leafArea * BasePhotosynthesisRate * efficiency;
+        // Scale down if water is insufficient
+        double currentWater = 0d;
+        if (org.TryGetState("water", out object wVal) && TryConvertToDouble(wVal, out double wv))
+            currentWater = wv;
+        if (currentWater < reactionScale)
+            reactionScale = Math.Max(0d, currentWater);
 
-        double waterCost = leafArea * 0.01 * stomata;
-        org.TryAddState("water", -waterCost, out _, out _);
+        if (reactionScale <= 0d) return 0d;
 
+        // ── Consume water (H₂O → split for O₂) ─────────────────────
+        org.TryAddState("water", -reactionScale, out _, out _);
+
+        // ── Produce energy (glucose → energy) ───────────────────────
+        double energyProduced = reactionScale * BasePhotosynthesisRate;
         org.TryAddState("energy", energyProduced, out _, out _);
+
+        // ── Emit O₂ to air ──────────────────────────────────────────
+        world.TryAddWorldValue("air_oxygen", reactionScale, out _, out _);
+
         return energyProduced;
     }
 

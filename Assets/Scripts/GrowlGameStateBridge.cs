@@ -96,13 +96,10 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 double airCo2 = 0.04;
                 if (resourceGrid.TryGetWorldValue("air_co2", out object acv) && acv is float acf)
                     airCo2 = acf;
-                double water = 0.5;
-                if (organismEntity.TryGetState("water", out object wv))
-                {
-                    if (wv is double wd) water = wd;
-                    else if (wv is float wf) water = wf;
-                }
-                Log($"  leafArea={leafArea:F1} light={lightInt:F2} co2={stomata * airCo2:F4} water={water:F2}");
+                double lightCapture = Math.Max(0d, Math.Min(1d, lightInt));
+                double co2In = leafArea * stomata * airCo2 * lightCapture;
+                double energyGain = co2In * 2.0;
+                Log($"  leafArea={leafArea:F1} light={lightInt:F2} co2In={co2In:F4} h2oUsed={co2In:F4} energy=+{energyGain:F4} o2=+{co2In:F4}");
             }
         }
 

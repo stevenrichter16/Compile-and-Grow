@@ -10,6 +10,7 @@ public sealed class ResourceGrid : MonoBehaviour
     [SerializeField] private float worldTemperature = 22f;
     [SerializeField] private float worldMoisture = 0.5f;
     [SerializeField] private float airCo2 = 0.04f;
+    [SerializeField] private float airOxygen = 0.21f;
     [SerializeField] private float soilWater = 0.5f;
 
     private readonly Dictionary<string, object> _customWorldValues = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -29,6 +30,9 @@ public sealed class ResourceGrid : MonoBehaviour
                 return true;
             case "air_co2":
                 value = airCo2;
+                return true;
+            case "air_oxygen":
+                value = airOxygen;
                 return true;
             case "soil_water":
                 value = soilWater;
@@ -81,6 +85,16 @@ public sealed class ResourceGrid : MonoBehaviour
                 errorMessage = null;
                 return true;
 
+            case "air_oxygen":
+                if (!TryConvertToFloat(value, out airOxygen))
+                {
+                    errorMessage = "world.air_oxygen expects a numeric value.";
+                    return false;
+                }
+                airOxygen = Mathf.Max(0f, airOxygen);
+                errorMessage = null;
+                return true;
+
             case "soil_water":
                 if (!TryConvertToFloat(value, out soilWater))
                 {
@@ -126,6 +140,12 @@ public sealed class ResourceGrid : MonoBehaviour
                 errorMessage = null;
                 return true;
 
+            case "air_oxygen":
+                airOxygen = Mathf.Max(0f, airOxygen + (float)delta);
+                result = airOxygen;
+                errorMessage = null;
+                return true;
+
             case "soil_water":
                 soilWater = Mathf.Clamp01(soilWater + (float)delta);
                 result = soilWater;
@@ -159,6 +179,7 @@ public sealed class ResourceGrid : MonoBehaviour
             ["temperature"] = worldTemperature,
             ["moisture"] = worldMoisture,
             ["air_co2"] = airCo2,
+            ["air_oxygen"] = airOxygen,
             ["soil_water"] = soilWater,
         };
 
