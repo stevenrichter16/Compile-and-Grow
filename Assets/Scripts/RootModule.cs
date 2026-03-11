@@ -112,11 +112,12 @@ public static class RootModule
     {
         if (string.IsNullOrEmpty(resource)) return 0d;
 
-        float rootArea = GetTotalRootArea(body);
+        float rootArea = GetAbsorptionRootArea(body);
         float rate = rootArea * BaseAbsorptionRate;
 
         // Get soil concentration from world
-        string soilKey = "soil_" + resource.Trim().ToLowerInvariant();
+        string normalized = NormalizeResource(resource);
+        string soilKey = "soil_" + normalized;
         double soilConcentration = 0d;
         if (world.TryGetWorldValue(soilKey, out object soilVal) && TryConvertToDouble(soilVal, out double sv))
             soilConcentration = sv;
@@ -124,7 +125,6 @@ public static class RootModule
         double absorbed = rate * soilConcentration;
 
         // Apply to organism
-        string normalized = resource.Trim().ToLowerInvariant();
         if (normalized == "water")
         {
             org.TryAddState("water", absorbed, out _, out _);
@@ -278,13 +278,26 @@ public static class RootModule
         return true;
     }
 
-    private static float GetTotalRootArea(PlantBody body)
+    public static float GetTotalRootArea(PlantBody body)
     {
         var roots = body.FindPartsByType(RootType);
         float area = 0f;
         for (int i = 0; i < roots.Count; i++)
             area += roots[i].Size;
-        return Mathf.Max(area, 0.1f);
+        return area;
+    }
+
+    private static float GetAbsorptionRootArea(PlantBody body)
+    {
+        return Mathf.Max(GetTotalRootArea(body), 0.1f);
+    }
+
+    private static string NormalizeResource(string resource)
+    {
+        string normalized = resource.Trim().ToLowerInvariant();
+        if (normalized == "h2o")
+            return "water";
+        return normalized;
     }
 
     private static bool TryConvertToDouble(object value, out double number)

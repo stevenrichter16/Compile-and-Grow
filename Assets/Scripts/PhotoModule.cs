@@ -9,8 +9,44 @@ using UnityEngine;
 public static class PhotoModule
 {
     private const float BasePhotosynthesisRate = 2f; // base energy per unit leaf area
+    private const float MinViableLeafArea = 0.25f;
+    private const double OptimalAirCo2 = 0.04d;
+    private const double WaterDemandPerLeafArea = 0.6d;
+    private const double GlucosePerEnergy = 0.5d;
+    private const double TrackLightBonusMax = 0.25d;
+    private const double RootSupplyLeafRatio = 0.75d;
+
+    private struct Phase1ProcessResult
+    {
+        public PlantPart WaterStoragePart;
+        public double StoredStemWater;
+        public double LightCapture;
+        public double RootSupplyRatio;
+        public double WaterUsed;
+        public double WaterFromState;
+        public double WaterFromStem;
+        public double EnergyProduced;
+        public double GlucoseProduced;
+        public double WaterEfficiency;
+        public double NetEnergyPerTick;
+        public string LimitingFactor;
+    }
 
     // ── Photosynthesis ──────────────────────────────────────────────
+
+    /// <summary>photo.process() — Phase 1 beginner-facing photosynthesis loop.</summary>
+    public static double Process(PlantBody body, OrganismEntity org, ResourceGrid world)
+    {
+        Phase1ProcessResult result = EvaluatePhase1(body, org, world, efficiencyOverride: null);
+        ApplyPhase1Result(org, world, result);
+        return result.EnergyProduced;
+    }
+
+    /// <summary>photo.get_limiting_factor() — report the current limiting factor.</summary>
+    public static string GetLimitingFactor(PlantBody body, OrganismEntity org, ResourceGrid world)
+    {
+        return EvaluatePhase1(body, org, world, efficiencyOverride: null).LimitingFactor;
+    }
 
     /// <summary>
     /// photo.absorb_light() — stoichiometric photosynthesis.
@@ -20,65 +56,13 @@ public static class PhotoModule
     /// </summary>
     public static double AbsorbLight(PlantBody body, OrganismEntity org, ResourceGrid world, double efficiencyOverride)
     {
-        float leafArea = LeafModule.GetTotalLeafArea(body);
-        if (leafArea <= 0f) return 0d;
+        double? overrideValue = efficiencyOverride >= 0d && efficiencyOverride <= 1d
+            ? (double?)efficiencyOverride
+            : null;
 
-        float stomata = LeafModule.GetAverageStomataOpenness(body);
-
-        // ── Light capture (unchanged) ───────────────────────────────
-        double lightIntensity = 0.7;
-        if (world.TryGetWorldValue("power", out object lVal) && TryConvertToDouble(lVal, out double lv))
-            lightIntensity = Clamp01(lv / 100.0);
-
-        double lightCapture = lightIntensity;
-
-        PlantPart anyLeaf = body.FindPartsByType("leaf").Count > 0 ? body.FindPartsByType("leaf")[0] : null;
-
-        if (anyLeaf != null && anyLeaf.TryGetProperty("pigment", out object pig) && pig is string pigment)
-            lightCapture *= GetPigmentMultiplier(pigment, lightIntensity);
-
-        if (anyLeaf != null && anyLeaf.TryGetProperty("chlorophyll_boost", out object cb) && TryConvertToDouble(cb, out double boost))
-            lightCapture *= boost;
-
-        if (anyLeaf != null && anyLeaf.TryGetProperty("light_saturation", out object ls) && TryConvertToDouble(ls, out double sat))
-        {
-            if (lightIntensity > sat)
-                lightCapture *= sat / lightIntensity;
-        }
-
-        lightCapture = Clamp01(lightCapture);
-
-        // ── CO₂ from air (environmental constant, not consumed) ─────
-        double airCo2 = 0.04;
-        if (world.TryGetWorldValue("air_co2", out object co2Val) && TryConvertToDouble(co2Val, out double co2))
-            airCo2 = co2;
-
-        // ── Stoichiometric reaction scale ───────────────────────────
-        double reactionScale = leafArea * stomata * airCo2 * lightCapture;
-
-        if (efficiencyOverride >= 0d && efficiencyOverride <= 1d)
-            reactionScale = leafArea * efficiencyOverride;
-
-        // Scale down if water is insufficient
-        double currentWater = 0d;
-        if (org.TryGetState("water", out object wVal) && TryConvertToDouble(wVal, out double wv))
-            currentWater = wv;
-        if (currentWater < reactionScale)
-            reactionScale = Math.Max(0d, currentWater);
-
-        if (reactionScale <= 0d) return 0d;
-
-        // ── Consume water (H₂O → split for O₂) ─────────────────────
-        org.TryAddState("water", -reactionScale, out _, out _);
-
-        // ── Produce energy (glucose → energy) ───────────────────────
-        double energyProduced = reactionScale * BasePhotosynthesisRate;
-        org.TryAddState("energy", energyProduced, out _, out _);
-
-        // ── Emit O₂ to air ──────────────────────────────────────────
-        world.TryAddWorldValue("air_oxygen", reactionScale, out _, out _);
-
-        return energyProduced;
+        Phase1ProcessResult result = EvaluatePhase1(body, org, world, overrideValue);
+        ApplyPhase1Result(org, world, result);
+        return result.EnergyProduced;
     }
 
     /// <summary>photo.set_pigment(type) — change photosynthetic pigment.</summary>
@@ -267,6 +251,180 @@ public static class PhotoModule
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
+
+    private static Phase1ProcessResult EvaluatePhase1(
+        PlantBody body,
+        OrganismEntity org,
+        ResourceGrid world,
+        double? efficiencyOverride)
+    {
+        var leaves = body.FindPartsByType("leaf");
+        double leafArea = LeafModule.GetTotalLeafArea(body);
+        double stomata = Clamp01(LeafModule.GetAverageStomataOpenness(body));
+        double rootArea = RootModule.GetTotalRootArea(body);
+
+        double lightIntensity = 0.7d;
+        if (world.TryGetWorldValue("power", out object lightValue) && TryConvertToDouble(lightValue, out double rawLight))
+            lightIntensity = Clamp01(rawLight / 100.0d);
+
+        PlantPart anyLeaf = leaves.Count > 0 ? leaves[0] : null;
+        double lightTrackingRatio = GetLightTrackingRatio(leaves);
+        double lightCapture = efficiencyOverride ?? (lightIntensity + lightTrackingRatio * (1d - lightIntensity) * TrackLightBonusMax);
+
+        if (anyLeaf != null && anyLeaf.TryGetProperty("pigment", out object pig) && pig is string pigment)
+            lightCapture *= GetPigmentMultiplier(pigment, lightIntensity);
+
+        if (anyLeaf != null && anyLeaf.TryGetProperty("chlorophyll_boost", out object cb) && TryConvertToDouble(cb, out double boost))
+            lightCapture *= boost;
+
+        if (anyLeaf != null && anyLeaf.TryGetProperty("light_saturation", out object ls) && TryConvertToDouble(ls, out double saturation) &&
+            lightIntensity > saturation && saturation > 0d)
+        {
+            lightCapture *= saturation / lightIntensity;
+        }
+
+        lightCapture = Clamp01(lightCapture);
+
+        if (leafArea < MinViableLeafArea)
+        {
+            return new Phase1ProcessResult
+            {
+                LightCapture = lightCapture,
+                RootSupplyRatio = Clamp01((rootArea + 0.1d) / MinViableLeafArea),
+                LimitingFactor = "surface_area",
+            };
+        }
+
+        double airCo2 = OptimalAirCo2;
+        if (world.TryGetWorldValue("air_co2", out object co2Value) && TryConvertToDouble(co2Value, out double rawCo2))
+            airCo2 = Math.Max(0d, rawCo2);
+
+        double carbonRatio = Clamp01(airCo2 / OptimalAirCo2);
+        double currentWater = GetStateNumber(org, "water");
+        PlantPart waterStoragePart = FindWaterStoragePart(body);
+        double storedStemWater = waterStoragePart != null ? GetPropertyFloat(waterStoragePart, "stored_water") : 0d;
+        double accessibleWater = currentWater + storedStemWater;
+        double rootSupplyRatio = Clamp01((rootArea + 0.1d) / Math.Max(MinViableLeafArea, leafArea * RootSupplyLeafRatio));
+
+        double lightLimitedEnergy = leafArea * BasePhotosynthesisRate * lightCapture;
+        double carbonCeilingRatio = Clamp01(carbonRatio * stomata);
+        double fullWaterDemand = leafArea * WaterDemandPerLeafArea * stomata;
+        double waterAvailabilityRatio = fullWaterDemand <= 0.0001d
+            ? 1d
+            : Clamp01(accessibleWater / fullWaterDemand) * rootSupplyRatio;
+        double resourceScale = Math.Min(1d, Math.Min(carbonCeilingRatio, waterAvailabilityRatio));
+
+        double energyProduced = lightLimitedEnergy * resourceScale;
+        double waterUsed = fullWaterDemand * resourceScale;
+        double waterFromStem = Math.Min(storedStemWater, Math.Max(0d, waterUsed - currentWater));
+        double waterFromState = Math.Max(0d, waterUsed - waterFromStem);
+        double glucoseProduced = energyProduced * GlucosePerEnergy;
+
+        return new Phase1ProcessResult
+        {
+            WaterStoragePart = waterStoragePart,
+            StoredStemWater = storedStemWater,
+            LightCapture = lightCapture,
+            RootSupplyRatio = rootSupplyRatio,
+            WaterUsed = waterUsed,
+            WaterFromState = waterFromState,
+            WaterFromStem = waterFromStem,
+            EnergyProduced = energyProduced,
+            GlucoseProduced = glucoseProduced,
+            WaterEfficiency = waterUsed > 0.0001d ? glucoseProduced / waterUsed : 0d,
+            NetEnergyPerTick = energyProduced,
+            LimitingFactor = DetermineLimitingFactor(leafArea, lightCapture, waterAvailabilityRatio, carbonCeilingRatio),
+        };
+    }
+
+    private static void ApplyPhase1Result(OrganismEntity org, ResourceGrid world, Phase1ProcessResult result)
+    {
+        SetMetric(org, "glucose_per_tick", result.GlucoseProduced);
+        SetMetric(org, "net_energy_per_tick", result.NetEnergyPerTick);
+        SetMetric(org, "water_efficiency", result.WaterEfficiency);
+        SetMetric(org, "light_capture_pct", result.LightCapture * 100d);
+        SetMetric(org, "root_supply_ratio", result.RootSupplyRatio);
+        org.TrySetState("limiting_factor", result.LimitingFactor ?? "none", out _);
+
+        if (result.WaterFromState > 0d)
+            org.TryAddState("water", -result.WaterFromState, out _, out _);
+
+        if (result.WaterStoragePart != null && result.WaterFromStem > 0d)
+        {
+            double remaining = Math.Max(0d, result.StoredStemWater - result.WaterFromStem);
+            result.WaterStoragePart.TrySetProperty("stored_water", remaining);
+        }
+
+        if (result.EnergyProduced > 0d)
+            org.TryAddState("energy", result.EnergyProduced, out _, out _);
+
+        if (result.GlucoseProduced > 0d)
+            org.TryAddState("glucose", result.GlucoseProduced, out _, out _);
+
+        if (result.WaterUsed > 0d)
+            world.TryAddWorldValue("air_oxygen", result.WaterUsed, out _, out _);
+    }
+
+    private static string DetermineLimitingFactor(
+        double leafArea,
+        double lightCapture,
+        double waterAvailabilityRatio,
+        double carbonCeilingRatio)
+    {
+        if (leafArea < MinViableLeafArea)
+            return "surface_area";
+
+        double lightRatio = Clamp01(lightCapture);
+        double waterRatio = Clamp01(waterAvailabilityRatio);
+        double carbonRatio = Clamp01(carbonCeilingRatio);
+
+        if (lightRatio >= 0.95d && waterRatio >= 0.95d && carbonRatio >= 0.95d)
+            return "none";
+
+        double minimum = Math.Min(lightRatio, Math.Min(waterRatio, carbonRatio));
+        if (minimum == waterRatio)
+            return "water";
+        if (minimum == carbonRatio)
+            return "carbon";
+        return "light";
+    }
+
+    private static PlantPart FindWaterStoragePart(PlantBody body)
+    {
+        PlantPart mainStem = body.FindPart("stem_main");
+        if (mainStem != null)
+            return mainStem;
+
+        var stems = body.FindPartsByType("stem");
+        return stems.Count > 0 ? stems[0] : null;
+    }
+
+    private static double GetLightTrackingRatio(List<PlantPart> leaves)
+    {
+        if (leaves == null || leaves.Count == 0)
+            return 0d;
+
+        double tracked = 0d;
+        for (int i = 0; i < leaves.Count; i++)
+        {
+            if (leaves[i].TryGetProperty("track_light", out object value) && value is bool enabled && enabled)
+                tracked += 1d;
+        }
+
+        return tracked / leaves.Count;
+    }
+
+    private static double GetStateNumber(OrganismEntity org, string key)
+    {
+        if (org.TryGetState(key, out object value) && TryConvertToDouble(value, out double number))
+            return number;
+        return 0d;
+    }
+
+    private static void SetMetric(OrganismEntity org, string key, double value)
+    {
+        org.TrySetState(key, value, out _);
+    }
 
     private static double GetPigmentMultiplier(string pigment, double lightIntensity)
     {

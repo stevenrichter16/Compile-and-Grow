@@ -85,22 +85,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             Log(FormatActionLog(builtinName, args, result));
 
             // Show photosynthesis breakdown
-            if (builtinName == "photo_absorb_light" && organismEntity != null && resourceGrid != null)
-            {
-                PlantBody b = GetOrCreateBody();
-                float leafArea = LeafModule.GetTotalLeafArea(b);
-                float stomata = LeafModule.GetAverageStomataOpenness(b);
-                double lightInt = 0.7;
-                if (resourceGrid.TryGetWorldValue("power", out object lpv) && lpv is float lpf)
-                    lightInt = Mathf.Clamp01(lpf / 100f);
-                double airCo2 = 0.04;
-                if (resourceGrid.TryGetWorldValue("air_co2", out object acv) && acv is float acf)
-                    airCo2 = acf;
-                double lightCapture = Math.Max(0d, Math.Min(1d, lightInt));
-                double co2In = leafArea * stomata * airCo2 * lightCapture;
-                double energyGain = co2In * 2.0;
-                Log($"  leafArea={leafArea:F1} light={lightInt:F2} co2In={co2In:F4} h2oUsed={co2In:F4} energy=+{energyGain:F4} o2=+{co2In:F4}");
-            }
+            if ((builtinName == "photo_absorb_light" || builtinName == "photo_process") && organismEntity != null)
+                LogPhase1PhotoBreakdown();
         }
 
         return success;
@@ -112,7 +98,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                name.StartsWith("world_get") || name.StartsWith("seed_get") ||
                name.StartsWith("parts_") ||
                name.StartsWith("root_sense") ||
-               name == "org_get";
+               name == "org_get" ||
+               name == "photo_get_limiting_factor";
     }
 
     private static string FormatActionLog(string name, IReadOnlyList<RuntimeCallArgument> args, object result)
@@ -159,6 +146,35 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
         }
 
         return display + argStr + resultStr;
+    }
+
+    private void LogPhase1PhotoBreakdown()
+    {
+        double glucosePerTick = GetNumericState("glucose_per_tick");
+        double netEnergyPerTick = GetNumericState("net_energy_per_tick");
+        double waterEfficiency = GetNumericState("water_efficiency");
+        double lightCapturePct = GetNumericState("light_capture_pct");
+        double rootSupplyRatio = GetNumericState("root_supply_ratio");
+        string limitingFactor = GetStringState("limiting_factor", "none");
+
+        Log(
+            $"  glucose/tick={glucosePerTick:F2} net_energy/tick={netEnergyPerTick:F2} " +
+            $"water_eff={waterEfficiency:F2} light_capture={lightCapturePct:F0}% " +
+            $"root_supply={rootSupplyRatio:P0} limiting={limitingFactor}");
+    }
+
+    private double GetNumericState(string key)
+    {
+        if (organismEntity != null && organismEntity.TryGetState(key, out object value) && TryConvertToDouble(value, out double number))
+            return number;
+        return 0d;
+    }
+
+    private string GetStringState(string key, string fallback)
+    {
+        if (organismEntity != null && organismEntity.TryGetState(key, out object value) && value != null)
+            return value.ToString();
+        return fallback;
     }
 
     private bool TryInvokeBuiltinInner(
@@ -334,6 +350,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 return TryLeafBuiltin(builtinName, args, out result, out errorMessage);
 
             // ── photo module builtins ──
+            case "photo_process":
+            case "photo_get_limiting_factor":
             case "photo_absorb_light":
             case "photo_set_pigment":
             case "photo_boost_chlorophyll":
@@ -1707,6 +1725,12 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
 
         switch (name)
         {
+            case "photo_process":
+                result = PhotoModule.Process(body, organismEntity, resourceGrid);
+                return true;
+            case "photo_get_limiting_factor":
+                result = PhotoModule.GetLimitingFactor(body, organismEntity, resourceGrid);
+                return true;
             case "photo_absorb_light":
             {
                 double eff = TryReadNumberOptional(args, index: 0, name: "efficiency", defaultValue: -1d);

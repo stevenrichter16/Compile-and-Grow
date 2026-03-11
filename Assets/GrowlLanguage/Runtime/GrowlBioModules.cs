@@ -33,7 +33,7 @@ namespace GrowlLanguage.Runtime
             }, invokeHost));
 
             globals.Define("photo", BuildModule("photo", new[] {
-                "absorb_light", "set_pigment", "boost_chlorophyll",
+                "process", "get_limiting_factor", "absorb_light", "set_pigment", "boost_chlorophyll",
                 "set_light_saturation", "chemosynthesis", "thermosynthesis",
                 "radiosynthesis", "parasitic", "decompose", "set_metabolism",
                 "store_energy", "retrieve_energy", "share_energy"
