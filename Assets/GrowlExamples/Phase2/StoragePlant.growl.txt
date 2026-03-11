@@ -1,0 +1,38 @@
+# Storage Plant
+
+@role("structure")
+fn structure():
+    if org_memory_get("_built") != 1:
+        morph.create_part("stem_main", "stem", size: 1.4, thickness: 1.8)
+        morph.create_part("root_main", "root", size: 1.2)
+        morph.create_part("leaf_1", "leaf", size: 1.0)
+        morph.attach("root_main", "stem_main")
+        morph.attach("leaf_1", "stem_main")
+        org_memory_set("_built", 1)
+
+@role("control")
+fn control():
+    photo.set_glucose_storage_bias(0.70)
+    photo.set_energy_storage_bias(0.35)
+    leaf.open_stomata(0.32)
+    leaf.track_light(true)
+
+@role("intake")
+fn intake():
+    root.absorb("H2O")
+    if org_get("water", 0) > 0.35:
+        stem.store_water(0.15)
+
+@role("energy")
+fn energy():
+    gained = photo.process()
+    print("energy=" + str(gained) +
+          " g_store=" + str(org_get("stored_glucose", 0)) +
+          " e_store=" + str(org_get("stored_energy", 0)) +
+          " limiting=" + photo.get_limiting_factor())
+
+fn main():
+    structure()
+    control()
+    intake()
+    energy()

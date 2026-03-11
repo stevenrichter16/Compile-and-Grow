@@ -208,6 +208,7 @@ public sealed class GrowlSignatureHintProvider : ISignatureHintProvider
         {
             ["store_water"] = Sig("stem.store_water", P("amount")),
             ["store_energy"] = Sig("stem.store_energy", P("amount")),
+            ["store_glucose"] = Sig("stem.store_glucose", P("amount")),
         };
 
         d["leaf"] = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
@@ -221,6 +222,8 @@ public sealed class GrowlSignatureHintProvider : ISignatureHintProvider
         {
             ["process"] = Sig("photo.process"),
             ["get_limiting_factor"] = Sig("photo.get_limiting_factor"),
+            ["set_glucose_storage_bias"] = Sig("photo.set_glucose_storage_bias", P("value")),
+            ["set_energy_storage_bias"] = Sig("photo.set_energy_storage_bias", P("value")),
         };
 
         // String methods

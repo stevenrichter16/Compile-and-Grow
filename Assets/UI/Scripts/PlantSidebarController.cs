@@ -90,10 +90,16 @@ public sealed class PlantSidebarController
             float glucose = GetFloat(org, "glucose");
             float health = GetFloat(org, "health");
             float water = GetFloat(org, "water");
-            float storedWater = GetStoredWater(org);
+            float storedWater = GetFloat(org, "stored_water");
+            float storedGlucose = GetFloat(org, "stored_glucose");
+            float storedEnergy = GetFloat(org, "stored_energy");
             float stress = GetFloat(org, "stress");
             float maturity = GetFloat(org, "maturity");
             float waterEfficiency = GetFloat(org, "water_efficiency");
+            float lightCapturePct = GetFloat(org, "light_capture_pct");
+            float rootSupplyRatio = GetFloat(org, "root_supply_ratio");
+            float leafUtilization = GetFloat(org, "leaf_utilization");
+            string limitingFactor = GetString(org, "limiting_factor", "none");
             bool alive = org.IsAlive;
 
             // Age
@@ -108,11 +114,17 @@ public sealed class PlantSidebarController
 
             SetStat(card, "energy-value", "energy-arrow", energy, prev?[0]);
             SetStat(card, "glucose-value", "glucose-arrow", glucose, prev?[1]);
+            SetWholePercentValue(card, "light-capture-value", lightCapturePct);
+            SetPercentValue(card, "root-supply-value", rootSupplyRatio);
+            SetTextValue(card, "limiting-factor-value", limitingFactor);
             SetStat(card, "water-current-value", "water-current-arrow", water, prev?[2]);
             SetValue(card, "stored-water-value", storedWater);
+            SetValue(card, "stored-glucose-value", storedGlucose);
+            SetValue(card, "stored-energy-value", storedEnergy);
             SetValue(card, "water-gained-value", org.WaterGained);
             SetValue(card, "water-lost-value", org.WaterSpent);
             SetValue(card, "water-efficiency-value", waterEfficiency);
+            SetPercentValue(card, "leaf-utilization-value", leafUtilization);
             SetStat(card, "health-value", "health-arrow", health, prev?[3]);
 
             _prevValues[id] = new[] { energy, glucose, water, health };
@@ -146,6 +158,13 @@ public sealed class PlantSidebarController
         return 0f;
     }
 
+    static string GetString(OrganismEntity org, string key, string fallback)
+    {
+        if (org.TryGetState(key, out var val) && val != null)
+            return val.ToString();
+        return fallback;
+    }
+
     static void SetStat(VisualElement card, string valueName, string arrowName, float current, float? previous)
     {
         card.Q<Label>(valueName).text = current.ToString("0.00");
@@ -172,27 +191,19 @@ public sealed class PlantSidebarController
         card.Q<Label>(valueName).text = current.ToString("0.00");
     }
 
-    static float GetStoredWater(OrganismEntity org)
+    static void SetPercentValue(VisualElement card, string valueName, float current)
     {
-        if (org == null || org.Body == null)
-            return 0f;
+        card.Q<Label>(valueName).text = $"{current * 100f:0}%";
+    }
 
-        PlantPart storagePart = org.Body.FindPart("stem_main");
-        if (storagePart == null)
-        {
-            var stems = org.Body.FindPartsByType("stem");
-            if (stems != null && stems.Count > 0)
-                storagePart = stems[0];
-        }
+    static void SetWholePercentValue(VisualElement card, string valueName, float current)
+    {
+        card.Q<Label>(valueName).text = $"{current:0}%";
+    }
 
-        if (storagePart == null || !storagePart.TryGetProperty("stored_water", out object value))
-            return 0f;
-
-        if (value is float f) return f;
-        if (value is double d) return (float)d;
-        if (value is int i) return i;
-        if (value is long l) return l;
-        return 0f;
+    static void SetTextValue(VisualElement card, string valueName, string current)
+    {
+        card.Q<Label>(valueName).text = current;
     }
 
     static string GetStatus(bool alive, float health, float stress, float maturity)

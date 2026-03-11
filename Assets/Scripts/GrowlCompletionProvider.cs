@@ -362,6 +362,7 @@ public sealed class GrowlCompletionProvider : ICompletionProvider
         {
             I("store_water", CompletionKind.Method, "store_water(amount)"),
             I("store_energy", CompletionKind.Method, "store_energy(amount)"),
+            I("store_glucose", CompletionKind.Method, "store_glucose(amount)"),
         };
 
         dict["leaf"] = new List<CompletionItem>
@@ -375,6 +376,8 @@ public sealed class GrowlCompletionProvider : ICompletionProvider
         {
             I("process", CompletionKind.Method, "process()"),
             I("get_limiting_factor", CompletionKind.Method, "get_limiting_factor()"),
+            I("set_glucose_storage_bias", CompletionKind.Method, "set_glucose_storage_bias(value)"),
+            I("set_energy_storage_bias", CompletionKind.Method, "set_energy_storage_bias(value)"),
         };
 
         // String methods

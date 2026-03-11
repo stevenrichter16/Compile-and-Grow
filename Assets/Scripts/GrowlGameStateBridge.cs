@@ -151,16 +151,24 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
     private void LogPhase1PhotoBreakdown()
     {
         double glucosePerTick = GetNumericState("glucose_per_tick");
+        double storedGlucose = GetNumericState("stored_glucose");
+        double storedWater = GetNumericState("stored_water");
+        double storedEnergy = GetNumericState("stored_energy");
         double netEnergyPerTick = GetNumericState("net_energy_per_tick");
         double waterEfficiency = GetNumericState("water_efficiency");
         double lightCapturePct = GetNumericState("light_capture_pct");
         double rootSupplyRatio = GetNumericState("root_supply_ratio");
+        double leafUtilization = GetNumericState("leaf_utilization");
+        double glucoseStorageBias = GetNumericState("glucose_storage_bias");
+        double energyStorageBias = GetNumericState("energy_storage_bias");
         string limitingFactor = GetStringState("limiting_factor", "none");
 
         Log(
             $"  glucose/tick={glucosePerTick:F2} net_energy/tick={netEnergyPerTick:F2} " +
+            $"stored_glucose={storedGlucose:F2} stored_water={storedWater:F2} stored_energy={storedEnergy:F2} " +
+            $"g_store_bias={glucoseStorageBias:P0} e_store_bias={energyStorageBias:P0} " +
             $"water_eff={waterEfficiency:F2} light_capture={lightCapturePct:F0}% " +
-            $"root_supply={rootSupplyRatio:P0} limiting={limitingFactor}");
+            $"leaf_util={leafUtilization:P0} root_supply={rootSupplyRatio:P0} limiting={limitingFactor}");
     }
 
     private double GetNumericState(string key)
@@ -318,6 +326,7 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "stem_set_material":
             case "stem_store_water":
             case "stem_store_energy":
+            case "stem_store_glucose":
             case "stem_attach_to":
             case "stem_support_weight":
             case "stem_shed":
@@ -362,6 +371,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "photo_parasitic":
             case "photo_decompose":
             case "photo_set_metabolism":
+            case "photo_set_glucose_storage_bias":
+            case "photo_set_energy_storage_bias":
             case "photo_store_energy":
             case "photo_retrieve_energy":
             case "photo_share_energy":
@@ -1492,6 +1503,12 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 result = StemModule.StoreEnergy(body, organismEntity, amount);
                 return true;
             }
+            case "stem_store_glucose":
+            {
+                float amount = (float)TryReadNumberOptional(args, index: 0, name: "amount", defaultValue: 1d);
+                result = StemModule.StoreGlucose(body, organismEntity, amount);
+                return true;
+            }
             case "stem_attach_to":
             {
                 string target = "support";
@@ -1784,6 +1801,18 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             {
                 float rate = (float)TryReadNumberOptional(args, index: 0, name: "rate", defaultValue: 1d);
                 result = PhotoModule.SetMetabolism(organismEntity, rate);
+                return true;
+            }
+            case "photo_set_glucose_storage_bias":
+            {
+                double value = TryReadNumberOptional(args, index: 0, name: "value", defaultValue: 0.25d);
+                result = PhotoModule.SetGlucoseStorageBias(organismEntity, value);
+                return true;
+            }
+            case "photo_set_energy_storage_bias":
+            {
+                double value = TryReadNumberOptional(args, index: 0, name: "value", defaultValue: 0d);
+                result = PhotoModule.SetEnergyStorageBias(organismEntity, value);
                 return true;
             }
             case "photo_store_energy":

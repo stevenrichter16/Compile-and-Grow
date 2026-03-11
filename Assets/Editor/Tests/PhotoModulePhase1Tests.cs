@@ -109,6 +109,83 @@ public class PhotoModulePhase1Tests
     }
 
     [Test]
+    public void Process_SetsLeafUtilizationMetric()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.4f, rootSize: 1.2f, stomata: 0.4f);
+        harness.Grid.TrySetWorldValue("power", 100d, out _);
+        harness.Grid.TrySetWorldValue("air_co2", 0.04d, out _);
+        harness.Org.TrySetState("water", 1.0d, out _);
+
+        PhotoModule.Process(harness.Body, harness.Org, harness.Grid);
+
+        Assert.That(GetStateNumber(harness.Org, "leaf_utilization"), Is.EqualTo(0.4d).Within(0.0001d));
+    }
+
+    [Test]
+    public void Process_AutomaticallyStoresSomeProducedGlucose_ByDefault()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.4f, rootSize: 1.2f, stomata: 0.4f, stemThickness: 1.5f);
+        harness.Grid.TrySetWorldValue("power", 100d, out _);
+        harness.Grid.TrySetWorldValue("air_co2", 0.04d, out _);
+        harness.Org.TrySetState("water", 1.0d, out _);
+
+        PhotoModule.Process(harness.Body, harness.Org, harness.Grid);
+
+        Assert.That(GetStateNumber(harness.Org, "stored_glucose"), Is.GreaterThan(0d));
+        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.GreaterThan(0d));
+    }
+
+    [Test]
+    public void Process_UsesConfiguredGlucoseStorageBias()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.4f, rootSize: 1.2f, stomata: 0.4f, stemThickness: 1.5f);
+        harness.Grid.TrySetWorldValue("power", 100d, out _);
+        harness.Grid.TrySetWorldValue("air_co2", 0.04d, out _);
+        harness.Org.TrySetState("water", 1.0d, out _);
+        harness.Org.TrySetState("glucose_storage_bias", 0.5d, out _);
+
+        PhotoModule.Process(harness.Body, harness.Org, harness.Grid);
+
+        Assert.That(GetStateNumber(harness.Org, "stored_glucose"), Is.EqualTo(0.28d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(0.28d).Within(0.0001d));
+    }
+
+    [Test]
+    public void Process_UsesConfiguredEnergyStorageBias()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.4f, rootSize: 1.2f, stomata: 0.4f, stemThickness: 1.5f);
+        harness.Grid.TrySetWorldValue("power", 100d, out _);
+        harness.Grid.TrySetWorldValue("air_co2", 0.04d, out _);
+        harness.Org.TrySetState("water", 1.0d, out _);
+        harness.Org.TrySetState("energy_storage_bias", 0.25d, out _);
+        double energyBefore = GetStateNumber(harness.Org, "energy");
+
+        PhotoModule.Process(harness.Body, harness.Org, harness.Grid);
+
+        Assert.That(GetStateNumber(harness.Org, "stored_energy"), Is.EqualTo(0.28d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "energy") - energyBefore, Is.EqualTo(0.84d).Within(0.0001d));
+    }
+
+    [Test]
+    public void StemStoreEnergy_RespectsStemThicknessCapacity()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.0f, rootSize: 1.0f, stemThickness: 0.5f);
+        harness.Org.TrySetState("energy", 3.0d, out _);
+
+        double stored = StemModule.StoreEnergy(harness.Body, harness.Org, 2.0f);
+
+        Assert.That(stored, Is.EqualTo(0.75d).Within(0.0001d));
+        Assert.That(GetStemPropertyNumber(harness.Body, "stored_energy"), Is.EqualTo(0.75d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "energy"), Is.EqualTo(2.25d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "stored_energy"), Is.EqualTo(0.75d).Within(0.0001d));
+    }
+
+    [Test]
     public void GetLimitingFactor_ReturnsLastProcessedSnapshot_AfterProcessMutatesWaterState()
     {
         var harness = CreateHarness();
@@ -122,6 +199,21 @@ public class PhotoModulePhase1Tests
         Assert.That(energy, Is.GreaterThan(0d));
         Assert.That(GetStateString(harness.Org, "limiting_factor"), Is.EqualTo("carbon"));
         Assert.That(PhotoModule.GetLimitingFactor(harness.Body, harness.Org, harness.Grid), Is.EqualTo("carbon"));
+    }
+
+    [Test]
+    public void StemStoreGlucose_MovesGlucoseIntoLocalStorage_AndRefreshesStorageMetrics()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.2f, rootSize: 1.0f, stemThickness: 1.2f);
+        harness.Org.TrySetState("glucose", 0.8d, out _);
+
+        double stored = StemModule.StoreGlucose(harness.Body, harness.Org, 0.5f);
+
+        Assert.That(stored, Is.EqualTo(0.5d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(0.3d).Within(0.0001d));
+        Assert.That(GetStemPropertyNumber(harness.Body, "stored_glucose"), Is.EqualTo(0.5d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "stored_glucose"), Is.EqualTo(0.5d).Within(0.0001d));
     }
 
     [Test]
@@ -181,6 +273,30 @@ public class PhotoModulePhase1Tests
         Assert.That(limitingResult, Is.EqualTo(PhotoModule.GetLimitingFactor(harness.Body, harness.Org, harness.Grid)));
     }
 
+    [Test]
+    public void GrowlBridge_DispatchesPhotoAllocationBuiltins()
+    {
+        var harness = CreateHarness();
+
+        bool glucoseOk = harness.Bridge.TryInvokeBuiltin(
+            "photo_set_glucose_storage_bias",
+            new[] { new RuntimeCallArgument("value", 0.6d) },
+            out object glucoseResult,
+            out string glucoseError);
+        bool energyOk = harness.Bridge.TryInvokeBuiltin(
+            "photo_set_energy_storage_bias",
+            new[] { new RuntimeCallArgument("value", 0.2d) },
+            out object energyResult,
+            out string energyError);
+
+        Assert.That(glucoseOk, Is.True, glucoseError);
+        Assert.That(energyOk, Is.True, energyError);
+        Assert.That(Convert.ToDouble(glucoseResult), Is.EqualTo(0.6d).Within(0.0001d));
+        Assert.That(Convert.ToDouble(energyResult), Is.EqualTo(0.2d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "glucose_storage_bias"), Is.EqualTo(0.6d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "energy_storage_bias"), Is.EqualTo(0.2d).Within(0.0001d));
+    }
+
     private Harness CreateHarness()
     {
         var go = new GameObject("Phase1Harness");
@@ -222,6 +338,14 @@ public class PhotoModulePhase1Tests
     {
         Assert.That(org.TryGetState(key, out object value), Is.True, $"Missing org state '{key}'.");
         return value?.ToString();
+    }
+
+    private static double GetStemPropertyNumber(PlantBody body, string key)
+    {
+        PlantPart stem = body.FindPart("stem_main");
+        Assert.That(stem, Is.Not.Null, "Missing stem_main.");
+        Assert.That(stem.TryGetProperty(key, out object value), Is.True, $"Missing stem property '{key}'.");
+        return Convert.ToDouble(value);
     }
 
     private struct Harness

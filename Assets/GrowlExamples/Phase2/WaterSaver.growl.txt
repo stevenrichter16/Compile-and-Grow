@@ -1,0 +1,43 @@
+# Phase 2 Water Saver
+
+@role("structure")
+fn structure():
+    if org_memory_get("_built") != 1:
+        morph.create_part("stem_main", "stem", size: 1.2, thickness: 1.4)
+        morph.create_part("root_main", "root", size: 1.6)
+        morph.create_part("leaf_1", "leaf", size: 0.9)
+        morph.attach("root_main", "stem_main")
+        morph.attach("leaf_1", "stem_main")
+        org_memory_set("_built", 1)
+
+@role("control")
+fn control():
+    photo.set_glucose_storage_bias(0.45)
+    photo.set_energy_storage_bias(0.20)
+
+    if org_get("water", 0) < 0.3:
+        leaf.open_stomata(0.15)
+    else:
+        leaf.open_stomata(0.28)
+
+    leaf.track_light(true)
+
+@role("intake")
+fn intake():
+    root.absorb("H2O")
+    if org_get("water", 0) > 0.45:
+        stem.store_water(0.12)
+
+@role("energy")
+fn energy():
+    gained = photo.process()
+    print("energy=" + str(gained) +
+          " stored_water=" + str(org_get("stored_water", 0)) +
+          " water_eff=" + str(org_get("water_efficiency", 0)) +
+          " limiting=" + photo.get_limiting_factor())
+
+fn main():
+    structure()
+    control()
+    intake()
+    energy()

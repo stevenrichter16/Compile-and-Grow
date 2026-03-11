@@ -19,7 +19,7 @@ namespace GrowlLanguage.Runtime
 
             globals.Define("stem", BuildModule("stem", new[] {
                 "grow_up", "grow_horizontal", "grow_thick", "branch", "grow_segment",
-                "split", "set_rigidity", "set_material", "store_water", "store_energy",
+                "split", "set_rigidity", "set_material", "store_water", "store_energy", "store_glucose",
                 "attach_to", "support_weight", "shed", "heal", "set_color",
                 "set_texture", "produce_bark", "produce_wax"
             }, invokeHost));
@@ -36,6 +36,7 @@ namespace GrowlLanguage.Runtime
                 "process", "get_limiting_factor", "absorb_light", "set_pigment", "boost_chlorophyll",
                 "set_light_saturation", "chemosynthesis", "thermosynthesis",
                 "radiosynthesis", "parasitic", "decompose", "set_metabolism",
+                "set_glucose_storage_bias", "set_energy_storage_bias",
                 "store_energy", "retrieve_energy", "share_energy"
             }, invokeHost));
 

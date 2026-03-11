@@ -1,0 +1,38 @@
+# Phase 2 Fast Grower
+
+@role("structure")
+fn structure():
+    if org_memory_get("_built") != 1:
+        morph.create_part("stem_main", "stem", size: 1.0, thickness: 0.8)
+        morph.create_part("root_main", "root", size: 1.1)
+        morph.create_part("leaf_1", "leaf", size: 1.6)
+        morph.create_part("leaf_2", "leaf", size: 1.4)
+        morph.attach("root_main", "stem_main")
+        morph.attach("leaf_1", "stem_main")
+        morph.attach("leaf_2", "stem_main")
+        org_memory_set("_built", 1)
+
+@role("control")
+fn control():
+    photo.set_glucose_storage_bias(0.05)
+    photo.set_energy_storage_bias(0.00)
+    leaf.open_stomata(0.75)
+    leaf.track_light(true)
+
+@role("intake")
+fn intake():
+    root.absorb("H2O")
+
+@role("energy")
+fn energy():
+    gained = photo.process()
+    print("energy=" + str(gained) +
+          " glucose/tick=" + str(org_get("glucose_per_tick", 0)) +
+          " stored_glucose=" + str(org_get("stored_glucose", 0)) +
+          " limiting=" + photo.get_limiting_factor())
+
+fn main():
+    structure()
+    control()
+    intake()
+    energy()

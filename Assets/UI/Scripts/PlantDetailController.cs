@@ -253,10 +253,16 @@ public sealed class PlantDetailController
 
         float totalCost = maintenanceCost + memoryCost;
         float glucosePerTick = GetFloat(_organism, "glucose_per_tick");
+        float storedGlucose = GetFloat(_organism, "stored_glucose");
+        float storedWater = GetFloat(_organism, "stored_water");
+        float storedEnergy = GetFloat(_organism, "stored_energy");
         float netEnergyPerTick = GetFloat(_organism, "net_energy_per_tick");
+        float glucoseStorageBias = GetFloat(_organism, "glucose_storage_bias");
+        float energyStorageBias = GetFloat(_organism, "energy_storage_bias");
         float waterEfficiency = GetFloat(_organism, "water_efficiency");
         float lightCapturePct = GetFloat(_organism, "light_capture_pct");
         float rootSupplyRatio = GetFloat(_organism, "root_supply_ratio");
+        float leafUtilization = GetFloat(_organism, "leaf_utilization");
         string limitingFactor = GetString(_organism, "limiting_factor", "none");
 
         AddEnvRow(body, "Energy", $"{energy:F2}");
@@ -265,17 +271,23 @@ public sealed class PlantDetailController
         AddEnvRow(body, "Total cost", $"-{totalCost:F2}/tick");
         AddEnvRow(body, "Leaf count", $"{leafCount}");
         AddEnvRow(body, "Glucose / tick", $"{glucosePerTick:F2}");
+        AddEnvRow(body, "Stored glucose", $"{storedGlucose:F2}");
+        AddEnvRow(body, "Stored water", $"{storedWater:F2}");
+        AddEnvRow(body, "Stored energy", $"{storedEnergy:F2}");
+        AddEnvRow(body, "Glucose storage bias", $"{glucoseStorageBias * 100f:F0}%");
+        AddEnvRow(body, "Energy storage bias", $"{energyStorageBias * 100f:F0}%");
         AddEnvRow(body, "Net energy / tick", $"{netEnergyPerTick:F2}");
         AddEnvRow(body, "Water efficiency", $"{waterEfficiency:F2}");
         AddEnvRow(body, "Light capture", $"{lightCapturePct:F0}%");
         AddEnvRow(body, "Root supply ratio", $"{rootSupplyRatio * 100f:F0}%");
+        AddEnvRow(body, "Leaf utilization", $"{leafUtilization * 100f:F0}%");
         AddEnvRow(body, "Limiting factor", limitingFactor);
 
         // Per-tick resource flows
         AddEnvRow(body, "Water flow", $"+{_organism.WaterGained:F2} / -{_organism.WaterSpent:F2} per tick");
         AddEnvRow(body, "CO2 flow", $"+{_organism.Co2Gained:F2} / -{_organism.Co2Spent:F2} per tick");
 
-        _sectionSummaries["resources"].text = $"glucose:{glucosePerTick:F2} {limitingFactor}";
+        _sectionSummaries["resources"].text = $"glucose:{glucosePerTick:F2} stored:{storedGlucose:F2} {limitingFactor}";
     }
 
     // ── Environment ──

@@ -11,11 +11,25 @@
                 <ui:Label name="energy-value" class="stat-row__value" />
                 <ui:Label name="energy-arrow" class="stat-row__arrow" />
             </ui:VisualElement>
-            <ui:Label name="energy-formula" class="stat-row__formula" text="leafArea &#xD7; light &#xD7; CO&#x2082; &#xD7; water &#xD7; 2" />
             <ui:VisualElement class="stat-row">
                 <ui:Label class="stat-row__label" text="Gluc" />
                 <ui:Label name="glucose-value" class="stat-row__value" />
                 <ui:Label name="glucose-arrow" class="stat-row__arrow" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="Light" />
+                <ui:Label name="light-capture-value" class="stat-row__value" />
+                <ui:Label class="stat-row__arrow" text="" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="Roots" />
+                <ui:Label name="root-supply-value" class="stat-row__value" />
+                <ui:Label class="stat-row__arrow" text="" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="Limit" />
+                <ui:Label name="limiting-factor-value" class="stat-row__value" />
+                <ui:Label class="stat-row__arrow" text="" />
             </ui:VisualElement>
             <ui:VisualElement class="stat-row">
                 <ui:Label class="stat-row__label" text="Avail" />
@@ -23,8 +37,18 @@
                 <ui:Label name="water-current-arrow" class="stat-row__arrow" />
             </ui:VisualElement>
             <ui:VisualElement class="stat-row">
-                <ui:Label class="stat-row__label" text="Store" />
+                <ui:Label class="stat-row__label" text="WStore" />
                 <ui:Label name="stored-water-value" class="stat-row__value" />
+                <ui:Label class="stat-row__arrow" text="" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="GStore" />
+                <ui:Label name="stored-glucose-value" class="stat-row__value" />
+                <ui:Label class="stat-row__arrow" text="" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="EStore" />
+                <ui:Label name="stored-energy-value" class="stat-row__value" />
                 <ui:Label class="stat-row__arrow" text="" />
             </ui:VisualElement>
             <ui:VisualElement class="stat-row">
@@ -40,6 +64,11 @@
             <ui:VisualElement class="stat-row">
                 <ui:Label class="stat-row__label" text="Eff" />
                 <ui:Label name="water-efficiency-value" class="stat-row__value" />
+                <ui:Label class="stat-row__arrow" text="" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="Util" />
+                <ui:Label name="leaf-utilization-value" class="stat-row__value" />
                 <ui:Label class="stat-row__arrow" text="" />
             </ui:VisualElement>
             <ui:VisualElement class="stat-row">

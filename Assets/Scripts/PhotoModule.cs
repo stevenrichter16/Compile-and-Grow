@@ -15,6 +15,8 @@ public static class PhotoModule
     private const double GlucosePerEnergy = 0.5d;
     private const double TrackLightBonusMax = 0.25d;
     private const double RootSupplyLeafRatio = 0.75d;
+    private const double DefaultGlucoseStorageBias = 0.25d;
+    private const double DefaultEnergyStorageBias = 0.0d;
 
     private struct Phase1ProcessResult
     {
@@ -22,6 +24,7 @@ public static class PhotoModule
         public double StoredStemWater;
         public double LightCapture;
         public double RootSupplyRatio;
+        public double LeafUtilization;
         public double WaterUsed;
         public double WaterFromState;
         public double WaterFromStem;
@@ -38,7 +41,7 @@ public static class PhotoModule
     public static double Process(PlantBody body, OrganismEntity org, ResourceGrid world)
     {
         Phase1ProcessResult result = EvaluatePhase1(body, org, world, efficiencyOverride: null);
-        ApplyPhase1Result(org, world, result);
+        ApplyPhase1Result(body, org, world, result);
         return result.EnergyProduced;
     }
 
@@ -55,6 +58,22 @@ public static class PhotoModule
         return EvaluatePhase1(body, org, world, efficiencyOverride: null).LimitingFactor;
     }
 
+    /// <summary>photo.set_glucose_storage_bias(value) — route glucose into stem storage.</summary>
+    public static double SetGlucoseStorageBias(OrganismEntity org, double value)
+    {
+        double bias = Clamp01(value);
+        org.TrySetState("glucose_storage_bias", bias, out _);
+        return bias;
+    }
+
+    /// <summary>photo.set_energy_storage_bias(value) — route energy into stem storage.</summary>
+    public static double SetEnergyStorageBias(OrganismEntity org, double value)
+    {
+        double bias = Clamp01(value);
+        org.TrySetState("energy_storage_bias", bias, out _);
+        return bias;
+    }
+
     /// <summary>
     /// photo.absorb_light() — stoichiometric photosynthesis.
     /// 6 CO₂ + 6 H₂O + light → C₆H₁₂O₆ + 6 O₂
@@ -68,7 +87,7 @@ public static class PhotoModule
             : null;
 
         Phase1ProcessResult result = EvaluatePhase1(body, org, world, overrideValue);
-        ApplyPhase1Result(org, world, result);
+        ApplyPhase1Result(body, org, world, result);
         return result.EnergyProduced;
     }
 
@@ -212,6 +231,7 @@ public static class PhotoModule
 
         float stored = GetPropertyFloat(target, "stored_energy");
         target.TrySetProperty("stored_energy", (double)(stored + amount));
+        StemModule.RefreshStorageMetrics(body, org);
         return amount;
     }
 
@@ -244,6 +264,7 @@ public static class PhotoModule
 
         target.TrySetProperty("stored_energy", (double)(stored - retrieved));
         org.TryAddState("energy", retrieved, out _, out _);
+        StemModule.RefreshStorageMetrics(body, org);
         return retrieved;
     }
 
@@ -326,6 +347,9 @@ public static class PhotoModule
         double waterFromStem = Math.Min(storedStemWater, Math.Max(0d, waterUsed - currentWater));
         double waterFromState = Math.Max(0d, waterUsed - waterFromStem);
         double glucoseProduced = energyProduced * GlucosePerEnergy;
+        double leafUtilization = lightLimitedEnergy > 0.0001d
+            ? Clamp01(energyProduced / lightLimitedEnergy)
+            : 0d;
 
         return new Phase1ProcessResult
         {
@@ -333,6 +357,7 @@ public static class PhotoModule
             StoredStemWater = storedStemWater,
             LightCapture = lightCapture,
             RootSupplyRatio = rootSupplyRatio,
+            LeafUtilization = leafUtilization,
             WaterUsed = waterUsed,
             WaterFromState = waterFromState,
             WaterFromStem = waterFromStem,
@@ -344,13 +369,14 @@ public static class PhotoModule
         };
     }
 
-    private static void ApplyPhase1Result(OrganismEntity org, ResourceGrid world, Phase1ProcessResult result)
+    private static void ApplyPhase1Result(PlantBody body, OrganismEntity org, ResourceGrid world, Phase1ProcessResult result)
     {
         SetMetric(org, "glucose_per_tick", result.GlucoseProduced);
         SetMetric(org, "net_energy_per_tick", result.NetEnergyPerTick);
         SetMetric(org, "water_efficiency", result.WaterEfficiency);
         SetMetric(org, "light_capture_pct", result.LightCapture * 100d);
         SetMetric(org, "root_supply_ratio", result.RootSupplyRatio);
+        SetMetric(org, "leaf_utilization", result.LeafUtilization);
         org.TrySetState("limiting_factor", result.LimitingFactor ?? "none", out _);
 
         if (result.WaterFromState > 0d)
@@ -368,8 +394,26 @@ public static class PhotoModule
         if (result.GlucoseProduced > 0d)
             org.TryAddState("glucose", result.GlucoseProduced, out _, out _);
 
+        double energyStorageBias = GetEnergyStorageBias(org);
+        SetMetric(org, "energy_storage_bias", energyStorageBias);
+        if (result.EnergyProduced > 0d && energyStorageBias > 0d)
+        {
+            float targetStorage = (float)(result.EnergyProduced * energyStorageBias);
+            StemModule.StoreEnergy(body, org, targetStorage);
+        }
+
+        double glucoseStorageBias = GetGlucoseStorageBias(org);
+        SetMetric(org, "glucose_storage_bias", glucoseStorageBias);
+        if (result.GlucoseProduced > 0d && glucoseStorageBias > 0d)
+        {
+            float targetStorage = (float)(result.GlucoseProduced * glucoseStorageBias);
+            StemModule.StoreGlucose(body, org, targetStorage);
+        }
+
         if (result.WaterUsed > 0d)
             world.TryAddWorldValue("air_oxygen", result.WaterUsed, out _, out _);
+
+        StemModule.RefreshStorageMetrics(body, org);
     }
 
     private static string DetermineLimitingFactor(
@@ -404,6 +448,30 @@ public static class PhotoModule
 
         var stems = body.FindPartsByType("stem");
         return stems.Count > 0 ? stems[0] : null;
+    }
+
+    private static double GetGlucoseStorageBias(OrganismEntity org)
+    {
+        if (org != null &&
+            org.TryGetState("glucose_storage_bias", out object value) &&
+            TryConvertToDouble(value, out double configuredBias))
+        {
+            return Clamp01(configuredBias);
+        }
+
+        return DefaultGlucoseStorageBias;
+    }
+
+    private static double GetEnergyStorageBias(OrganismEntity org)
+    {
+        if (org != null &&
+            org.TryGetState("energy_storage_bias", out object value) &&
+            TryConvertToDouble(value, out double configuredBias))
+        {
+            return Clamp01(configuredBias);
+        }
+
+        return DefaultEnergyStorageBias;
     }
 
     private static double GetLightTrackingRatio(List<PlantPart> leaves)

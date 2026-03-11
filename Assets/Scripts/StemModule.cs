@@ -159,6 +159,7 @@ public static class StemModule
         // Deduct from org water
         org.TryAddState("water", -canStore, out _, out _);
         main.TrySetProperty("stored_water", (double)(stored + canStore));
+        RefreshStorageMetrics(body, org);
         return canStore;
     }
 
@@ -168,11 +169,50 @@ public static class StemModule
         if (amount <= 0f) return 0d;
 
         PlantPart main = FindOrCreateMainStem(body);
-        if (!TrySpendEnergy(org, amount)) return 0d;
-
+        float thickness = GetPropertyFloat(main, "thickness");
+        float capacity = thickness * 1.5f;
         float stored = GetPropertyFloat(main, "stored_energy");
-        main.TrySetProperty("stored_energy", (double)(stored + amount));
-        return amount;
+        float canStore = Mathf.Min(amount, capacity - stored);
+        if (canStore <= 0f) return 0d;
+        if (!TrySpendEnergy(org, canStore)) return 0d;
+
+        main.TrySetProperty("stored_energy", (double)(stored + canStore));
+        RefreshStorageMetrics(body, org);
+        return canStore;
+    }
+
+    /// <summary>stem.store_glucose(amount) — store sugar in the stem.</summary>
+    public static double StoreGlucose(PlantBody body, OrganismEntity org, float amount)
+    {
+        if (amount <= 0f) return 0d;
+
+        PlantPart main = FindOrCreateMainStem(body);
+        float thickness = GetPropertyFloat(main, "thickness");
+        float capacity = thickness * 1.5f;
+        float stored = GetPropertyFloat(main, "stored_glucose");
+        float canStore = Mathf.Min(amount, capacity - stored);
+        if (canStore <= 0f) return 0d;
+
+        if (!TrySpendResource(org, "glucose", canStore))
+            return 0d;
+
+        main.TrySetProperty("stored_glucose", (double)(stored + canStore));
+        RefreshStorageMetrics(body, org);
+        return canStore;
+    }
+
+    public static void RefreshStorageMetrics(PlantBody body, OrganismEntity org)
+    {
+        if (body == null || org == null)
+            return;
+
+        double storedWater = SumStoredProperty(body, "stored_water");
+        double storedEnergy = SumStoredProperty(body, "stored_energy");
+        double storedGlucose = SumStoredProperty(body, "stored_glucose");
+
+        org.TrySetState("stored_water", storedWater, out _);
+        org.TrySetState("stored_energy", storedEnergy, out _);
+        org.TrySetState("stored_glucose", storedGlucose, out _);
     }
 
     // ── Support ─────────────────────────────────────────────────────
@@ -297,11 +337,29 @@ public static class StemModule
 
     private static bool TrySpendEnergy(OrganismEntity org, float cost)
     {
-        if (!org.TryGetState("energy", out object eVal)) return false;
-        if (!TryConvertToDouble(eVal, out double energy)) return false;
-        if (energy < cost) return false;
-        org.TryAddState("energy", -cost, out _, out _);
+        return TrySpendResource(org, "energy", cost);
+    }
+
+    private static bool TrySpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (!org.TryGetState(key, out object value)) return false;
+        if (!TryConvertToDouble(value, out double current)) return false;
+        if (current < amount) return false;
+        org.TryAddState(key, -amount, out _, out _);
         return true;
+    }
+
+    private static double SumStoredProperty(PlantBody body, string key)
+    {
+        double total = 0d;
+        var parts = body.Parts;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            if (parts[i].TryGetProperty(key, out object value) && TryConvertToDouble(value, out double number))
+                total += Math.Max(0d, number);
+        }
+
+        return total;
     }
 
     private static bool TryConvertToDouble(object value, out double number)
