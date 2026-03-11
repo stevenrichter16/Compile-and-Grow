@@ -89,6 +89,7 @@ public sealed class PlantSidebarController
             float energy = GetFloat(org, "energy");
             float health = GetFloat(org, "health");
             float water = GetFloat(org, "water");
+            float storedWater = GetStoredWater(org);
             float stress = GetFloat(org, "stress");
             float maturity = GetFloat(org, "maturity");
             float waterEfficiency = GetFloat(org, "water_efficiency");
@@ -106,6 +107,7 @@ public sealed class PlantSidebarController
 
             SetStat(card, "energy-value", "energy-arrow", energy, prev?[0]);
             SetStat(card, "water-current-value", "water-current-arrow", water, prev?[1]);
+            SetValue(card, "stored-water-value", storedWater);
             SetValue(card, "water-gained-value", org.WaterGained);
             SetValue(card, "water-lost-value", org.WaterSpent);
             SetValue(card, "water-efficiency-value", waterEfficiency);
@@ -166,6 +168,29 @@ public sealed class PlantSidebarController
     static void SetValue(VisualElement card, string valueName, float current)
     {
         card.Q<Label>(valueName).text = current.ToString("0.00");
+    }
+
+    static float GetStoredWater(OrganismEntity org)
+    {
+        if (org == null || org.Body == null)
+            return 0f;
+
+        PlantPart storagePart = org.Body.FindPart("stem_main");
+        if (storagePart == null)
+        {
+            var stems = org.Body.FindPartsByType("stem");
+            if (stems != null && stems.Count > 0)
+                storagePart = stems[0];
+        }
+
+        if (storagePart == null || !storagePart.TryGetProperty("stored_water", out object value))
+            return 0f;
+
+        if (value is float f) return f;
+        if (value is double d) return (float)d;
+        if (value is int i) return i;
+        if (value is long l) return l;
+        return 0f;
     }
 
     static string GetStatus(bool alive, float health, float stress, float maturity)
