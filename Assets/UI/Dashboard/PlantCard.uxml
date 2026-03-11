@@ -13,6 +13,11 @@
             </ui:VisualElement>
             <ui:Label name="energy-formula" class="stat-row__formula" text="leafArea &#xD7; light &#xD7; CO&#x2082; &#xD7; water &#xD7; 2" />
             <ui:VisualElement class="stat-row">
+                <ui:Label class="stat-row__label" text="Gluc" />
+                <ui:Label name="glucose-value" class="stat-row__value" />
+                <ui:Label name="glucose-arrow" class="stat-row__arrow" />
+            </ui:VisualElement>
+            <ui:VisualElement class="stat-row">
                 <ui:Label class="stat-row__label" text="Avail" />
                 <ui:Label name="water-current-value" class="stat-row__value" />
                 <ui:Label name="water-current-arrow" class="stat-row__arrow" />

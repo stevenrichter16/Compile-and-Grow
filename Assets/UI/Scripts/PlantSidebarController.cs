@@ -87,6 +87,7 @@ public sealed class PlantSidebarController
 
             // Read state values
             float energy = GetFloat(org, "energy");
+            float glucose = GetFloat(org, "glucose");
             float health = GetFloat(org, "health");
             float water = GetFloat(org, "water");
             float storedWater = GetStoredWater(org);
@@ -106,14 +107,15 @@ public sealed class PlantSidebarController
             _prevValues.TryGetValue(id, out float[] prev);
 
             SetStat(card, "energy-value", "energy-arrow", energy, prev?[0]);
-            SetStat(card, "water-current-value", "water-current-arrow", water, prev?[1]);
+            SetStat(card, "glucose-value", "glucose-arrow", glucose, prev?[1]);
+            SetStat(card, "water-current-value", "water-current-arrow", water, prev?[2]);
             SetValue(card, "stored-water-value", storedWater);
             SetValue(card, "water-gained-value", org.WaterGained);
             SetValue(card, "water-lost-value", org.WaterSpent);
             SetValue(card, "water-efficiency-value", waterEfficiency);
-            SetStat(card, "health-value", "health-arrow", health, prev?[2]);
+            SetStat(card, "health-value", "health-arrow", health, prev?[3]);
 
-            _prevValues[id] = new[] { energy, water, health };
+            _prevValues[id] = new[] { energy, glucose, water, health };
 
             // Status
             string status = GetStatus(alive, health, stress, maturity);
