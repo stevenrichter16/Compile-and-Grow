@@ -91,6 +91,7 @@ public sealed class PlantSidebarController
             float water = GetFloat(org, "water");
             float stress = GetFloat(org, "stress");
             float maturity = GetFloat(org, "maturity");
+            float waterEfficiency = GetFloat(org, "water_efficiency");
             bool alive = org.IsAlive;
 
             // Age
@@ -99,28 +100,18 @@ public sealed class PlantSidebarController
                 age = ageVal is long l ? l : Convert.ToInt64(ageVal);
             card.Q<Label>("plant-age").text = $"t:{age}";
 
-            // CO2 stored in organism
-            float co2 = GetFloat(org, "co2");
-
             // Stat values + trend arrows
             int id = org.GetInstanceID();
             _prevValues.TryGetValue(id, out float[] prev);
 
             SetStat(card, "energy-value", "energy-arrow", energy, prev?[0]);
-            SetStat(card, "co2-value", "co2-arrow", co2, prev?[1]);
-            SetStat(card, "water-value", "water-arrow", water, prev?[2]);
-            SetStat(card, "health-value", "health-arrow", health, prev?[3]);
+            SetStat(card, "water-current-value", "water-current-arrow", water, prev?[1]);
+            SetValue(card, "water-gained-value", org.WaterGained);
+            SetValue(card, "water-lost-value", org.WaterSpent);
+            SetValue(card, "water-efficiency-value", waterEfficiency);
+            SetStat(card, "health-value", "health-arrow", health, prev?[2]);
 
-            // Append per-tick flow info to water and co2 values
-            var waterLabel = card.Q<Label>("water-value");
-            waterLabel.enableRichText = true;
-            waterLabel.text = $"{water:0.00} <color=#88AA88>+{org.WaterGained:0.00}</color> <color=#AA8888>-{org.WaterSpent:0.00}</color>";
-
-            var co2Label = card.Q<Label>("co2-value");
-            co2Label.enableRichText = true;
-            co2Label.text = $"{co2:0.00} <color=#88AA88>+{org.Co2Gained:0.00}</color> <color=#AA8888>-{org.Co2Spent:0.00}</color>";
-
-            _prevValues[id] = new[] { energy, co2, water, health };
+            _prevValues[id] = new[] { energy, water, health };
 
             // Status
             string status = GetStatus(alive, health, stress, maturity);
@@ -170,6 +161,11 @@ public sealed class PlantSidebarController
             arrow.text = "\u25BC";
             arrow.style.color = ArrowRed;
         }
+    }
+
+    static void SetValue(VisualElement card, string valueName, float current)
+    {
+        card.Q<Label>(valueName).text = current.ToString("0.00");
     }
 
     static string GetStatus(bool alive, float health, float stress, float maturity)
