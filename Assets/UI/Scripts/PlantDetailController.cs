@@ -252,18 +252,30 @@ public sealed class PlantDetailController
         float memoryCost = memoryKeys * 0.1f;
 
         float totalCost = maintenanceCost + memoryCost;
+        float glucosePerTick = GetFloat(_organism, "glucose_per_tick");
+        float netEnergyPerTick = GetFloat(_organism, "net_energy_per_tick");
+        float waterEfficiency = GetFloat(_organism, "water_efficiency");
+        float lightCapturePct = GetFloat(_organism, "light_capture_pct");
+        float rootSupplyRatio = GetFloat(_organism, "root_supply_ratio");
+        string limitingFactor = GetString(_organism, "limiting_factor", "none");
 
         AddEnvRow(body, "Energy", $"{energy:F2}");
         AddEnvRow(body, "Part maintenance", $"-{maintenanceCost:F2}/tick");
         AddEnvRow(body, "Memory cost", $"-{memoryCost:F2}/tick ({memoryKeys} keys)");
         AddEnvRow(body, "Total cost", $"-{totalCost:F2}/tick");
         AddEnvRow(body, "Leaf count", $"{leafCount}");
+        AddEnvRow(body, "Glucose / tick", $"{glucosePerTick:F2}");
+        AddEnvRow(body, "Net energy / tick", $"{netEnergyPerTick:F2}");
+        AddEnvRow(body, "Water efficiency", $"{waterEfficiency:F2}");
+        AddEnvRow(body, "Light capture", $"{lightCapturePct:F0}%");
+        AddEnvRow(body, "Root supply ratio", $"{rootSupplyRatio * 100f:F0}%");
+        AddEnvRow(body, "Limiting factor", limitingFactor);
 
         // Per-tick resource flows
         AddEnvRow(body, "Water flow", $"+{_organism.WaterGained:F2} / -{_organism.WaterSpent:F2} per tick");
         AddEnvRow(body, "CO2 flow", $"+{_organism.Co2Gained:F2} / -{_organism.Co2Spent:F2} per tick");
 
-        _sectionSummaries["resources"].text = $"cost:-{totalCost:F2}/tick";
+        _sectionSummaries["resources"].text = $"glucose:{glucosePerTick:F2} {limitingFactor}";
     }
 
     // ── Environment ──
@@ -531,6 +543,13 @@ public sealed class PlantDetailController
             return Convert.ToInt64(val);
         }
         return 0;
+    }
+
+    static string GetString(OrganismEntity org, string key, string fallback)
+    {
+        if (org.TryGetState(key, out var val) && val != null)
+            return val.ToString();
+        return fallback;
     }
 
     static string GetStatus(bool alive, float health, float stress, float maturity)

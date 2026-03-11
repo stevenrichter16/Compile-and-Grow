@@ -287,6 +287,11 @@ public sealed class GrowlCompletionProvider : ICompletionProvider
 
             // Namespace
             I("math", CompletionKind.Variable, "math namespace"),
+            I("morph", CompletionKind.Variable, "morph module"),
+            I("root", CompletionKind.Variable, "root module"),
+            I("stem", CompletionKind.Variable, "stem module"),
+            I("leaf", CompletionKind.Variable, "leaf module"),
+            I("photo", CompletionKind.Variable, "photo module"),
         };
         return list;
     }
@@ -340,6 +345,36 @@ public sealed class GrowlCompletionProvider : ICompletionProvider
             I("sigmoid",    CompletionKind.Method,   "sigmoid(x)"),
             I("smoothstep", CompletionKind.Method,   "smoothstep(e0, e1, x)"),
             I("map_range",  CompletionKind.Method,   "map_range(v, iLo, iHi, oLo, oHi)"),
+        };
+
+        dict["morph"] = new List<CompletionItem>
+        {
+            I("create_part", CompletionKind.Method, "create_part(name, type, size?, energy_cost?)"),
+            I("attach", CompletionKind.Method, "attach(part, to_part, position?)"),
+        };
+
+        dict["root"] = new List<CompletionItem>
+        {
+            I("absorb", CompletionKind.Method, "absorb(resource)"),
+        };
+
+        dict["stem"] = new List<CompletionItem>
+        {
+            I("store_water", CompletionKind.Method, "store_water(amount)"),
+            I("store_energy", CompletionKind.Method, "store_energy(amount)"),
+        };
+
+        dict["leaf"] = new List<CompletionItem>
+        {
+            I("open_stomata", CompletionKind.Method, "open_stomata(amount)"),
+            I("close_stomata", CompletionKind.Method, "close_stomata()"),
+            I("track_light", CompletionKind.Method, "track_light(enabled)"),
+        };
+
+        dict["photo"] = new List<CompletionItem>
+        {
+            I("process", CompletionKind.Method, "process()"),
+            I("get_limiting_factor", CompletionKind.Method, "get_limiting_factor()"),
         };
 
         // String methods

@@ -1,0 +1,31 @@
+# Water Saver
+
+@role("structure")
+fn structure():
+    if org_get("age", 0) == 0:
+        morph.create_part("stem_main", "stem", size: 1.1, thickness: 1.2)
+        morph.create_part("root_main", "root", size: 1.4)
+        morph.create_part("leaf_1", "leaf", size: 1.0)
+        morph.attach("root_main", "stem_main")
+        morph.attach("leaf_1", "stem_main")
+
+@role("intake")
+fn intake():
+    root.absorb("H2O")
+    if org_get("water", 0) > 0.6:
+        stem.store_water(0.15)
+
+@role("energy")
+fn energy():
+    if org_get("water", 0) < 0.2:
+        leaf.close_stomata()
+    else:
+        leaf.open_stomata(0.25)
+    leaf.track_light(true)
+    gained = photo.process()
+    print("energy=" + str(gained) + " glucose=" + str(org_get("glucose_per_tick", 0)) + " limiting=" + photo.get_limiting_factor())
+
+fn main():
+    structure()
+    intake()
+    energy()

@@ -87,49 +87,34 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
     private static readonly Color TabInactive = new Color(0.14f, 0.14f, 0.17f, 1f);
 
     private const string DefaultProgram =
-@"# Sprout — a simple photosynthesizer
-# Absorbs light and CO2, produces oxygen
-
-@role(""intake"")
-fn intake():
-    phase ""seedling""(0, 0.3):
-        root.grow_down(1)
-    phase ""seedling""(0.3, 0.7):
-        root.grow_down(1)
-    root.absorb(""water"")
-    leaf.absorb_chemical(""co2"")
+@"# Sprout - Phase 1 photosynthesis sandbox
 
 @role(""structure"")
 fn structure():
-    phase ""seedling""(0, 0.1):
-        stem.grow_up(1)
+    if org_get(""age"", 0) == 0:
+        morph.create_part(""stem_main"", ""stem"", size: 1.0, thickness: 1.0)
+        morph.create_part(""root_main"", ""root"", size: 1.2)
+        morph.create_part(""leaf_1"", ""leaf"", size: 1.4)
+        morph.attach(""root_main"", ""stem_main"")
+        morph.attach(""leaf_1"", ""stem_main"")
 
-    phase ""more leaves""(0.1, 0.4):
-        leaf.grow(1)
+@role(""intake"")
+fn intake():
+    root.absorb(""H2O"")
 
 @role(""energy"")
 fn energy():
-    photo.absorb_light()
-
-    leaf.open_stomata(0.1)
-
-#@role(""output"")
-#fn output():
-#    o2 = synthesize(""chemical"", type: ""oxygen"")
-#    if o2 != none:
-#        emit(o2, 0.1)
+    leaf.open_stomata(0.55)
+    leaf.track_light(true)
+    gained = photo.process()
+    glucose = org_get(""glucose_per_tick"", 0)
+    limiting = photo.get_limiting_factor()
+    print(""energy="" + str(gained) + "" glucose="" + str(glucose) + "" limiting="" + limiting)
 
 fn main():
-    intake()
     structure()
+    intake()
     energy()
-    #output()
-
-    a = org_get(""age"")
-    e = org_get(""energy"")
-    w = org_get(""water"")
-    m = org_get(""maturity"")
-    print(""tick "" + str(a) + ""  energy="" + str(e) + ""  water="" + str(w) + ""  maturity="" + str(m))
 ";
 
     private void Awake()
@@ -874,20 +859,30 @@ fn main():
         string template =
 @"# " + name + @"
 
+@role(""structure"")
+fn structure():
+    if org_get(""age"", 0) == 0:
+        morph.create_part(""stem_main"", ""stem"", size: 1.0, thickness: 1.0)
+        morph.create_part(""root_main"", ""root"", size: 1.0)
+        morph.create_part(""leaf_1"", ""leaf"", size: 1.2)
+        morph.attach(""root_main"", ""stem_main"")
+        morph.attach(""leaf_1"", ""stem_main"")
+
 @role(""intake"")
 fn intake():
-    root.absorb(""water"")
+    root.absorb(""H2O"")
 
 @role(""energy"")
 fn energy():
-    photo.absorb_light()
+    leaf.open_stomata(0.5)
+    energy = photo.process()
+    glucose = org_get(""glucose_per_tick"", 0)
+    print(""energy="" + str(energy) + "" glucose="" + str(glucose) + "" limiting="" + photo.get_limiting_factor())
 
 fn main():
+    structure()
     intake()
     energy()
-    a = org_get(""age"")
-    e = org_get(""energy"")
-    print(""tick "" + str(a) + ""  energy="" + str(e))
 ";
         _files.Add(new GrowlFile { name = name, source = template });
         _activeFileIndex = _files.Count - 1;

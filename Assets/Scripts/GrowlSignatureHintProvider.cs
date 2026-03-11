@@ -193,6 +193,36 @@ public sealed class GrowlSignatureHintProvider : ISignatureHintProvider
             ["map_range"]  = Sig("math.map_range", P("value"), P("inLow"), P("inHigh"), P("outLow"), P("outHigh")),
         };
 
+        d["morph"] = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
+        {
+            ["create_part"] = Sig("morph.create_part", P("name"), P("type"), P("size", true), P("energy_cost", true)),
+            ["attach"] = Sig("morph.attach", P("part"), P("to_part"), P("position", true)),
+        };
+
+        d["root"] = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
+        {
+            ["absorb"] = Sig("root.absorb", P("resource")),
+        };
+
+        d["stem"] = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
+        {
+            ["store_water"] = Sig("stem.store_water", P("amount")),
+            ["store_energy"] = Sig("stem.store_energy", P("amount")),
+        };
+
+        d["leaf"] = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
+        {
+            ["open_stomata"] = Sig("leaf.open_stomata", P("amount")),
+            ["close_stomata"] = Sig("leaf.close_stomata"),
+            ["track_light"] = Sig("leaf.track_light", P("enabled")),
+        };
+
+        d["photo"] = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
+        {
+            ["process"] = Sig("photo.process"),
+            ["get_limiting_factor"] = Sig("photo.get_limiting_factor"),
+        };
+
         // String methods
         var strMethods = new Dictionary<string, SignatureHint>(StringComparer.Ordinal)
         {
