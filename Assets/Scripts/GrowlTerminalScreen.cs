@@ -91,12 +91,13 @@ public sealed class GrowlTerminalScreen : MonoBehaviour
 
 @role(""structure"")
 fn structure():
-    if org_get(""age"", 0) == 0:
+    if org_memory_get(""_built"") != 1:
         morph.create_part(""stem_main"", ""stem"", size: 1.0, thickness: 1.0)
         morph.create_part(""root_main"", ""root"", size: 1.2)
         morph.create_part(""leaf_1"", ""leaf"", size: 1.4)
         morph.attach(""root_main"", ""stem_main"")
         morph.attach(""leaf_1"", ""stem_main"")
+        org_memory_set(""_built"", 1)
 
 @role(""intake"")
 fn intake():
@@ -861,12 +862,13 @@ fn main():
 
 @role(""structure"")
 fn structure():
-    if org_get(""age"", 0) == 0:
+    if org_memory_get(""_built"") != 1:
         morph.create_part(""stem_main"", ""stem"", size: 1.0, thickness: 1.0)
         morph.create_part(""root_main"", ""root"", size: 1.0)
         morph.create_part(""leaf_1"", ""leaf"", size: 1.2)
         morph.attach(""root_main"", ""stem_main"")
         morph.attach(""leaf_1"", ""stem_main"")
+        org_memory_set(""_built"", 1)
 
 @role(""intake"")
 fn intake():
