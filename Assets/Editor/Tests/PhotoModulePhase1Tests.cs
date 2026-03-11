@@ -109,6 +109,22 @@ public class PhotoModulePhase1Tests
     }
 
     [Test]
+    public void GetLimitingFactor_ReturnsLastProcessedSnapshot_AfterProcessMutatesWaterState()
+    {
+        var harness = CreateHarness();
+        SeedPlant(harness.Body, leafSize: 1.4f, rootSize: 1.2f, stomata: 0.4f);
+        harness.Grid.TrySetWorldValue("power", 100d, out _);
+        harness.Grid.TrySetWorldValue("air_co2", 0.04d, out _);
+        harness.Org.TrySetState("water", 0.4d, out _);
+
+        double energy = PhotoModule.Process(harness.Body, harness.Org, harness.Grid);
+
+        Assert.That(energy, Is.GreaterThan(0d));
+        Assert.That(GetStateString(harness.Org, "limiting_factor"), Is.EqualTo("carbon"));
+        Assert.That(PhotoModule.GetLimitingFactor(harness.Body, harness.Org, harness.Grid), Is.EqualTo("carbon"));
+    }
+
+    [Test]
     public void Process_UsesStoredStemWater_WhenAvailable()
     {
         var dryHarness = CreateHarness();
@@ -200,6 +216,12 @@ public class PhotoModulePhase1Tests
     {
         Assert.That(org.TryGetState(key, out object value), Is.True, $"Missing org state '{key}'.");
         return Convert.ToDouble(value);
+    }
+
+    private static string GetStateString(OrganismEntity org, string key)
+    {
+        Assert.That(org.TryGetState(key, out object value), Is.True, $"Missing org state '{key}'.");
+        return value?.ToString();
     }
 
     private struct Harness

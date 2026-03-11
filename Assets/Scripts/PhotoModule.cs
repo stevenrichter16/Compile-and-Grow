@@ -45,6 +45,13 @@ public static class PhotoModule
     /// <summary>photo.get_limiting_factor() — report the current limiting factor.</summary>
     public static string GetLimitingFactor(PlantBody body, OrganismEntity org, ResourceGrid world)
     {
+        if (org != null && org.TryGetState("limiting_factor", out object storedValue) && storedValue != null)
+        {
+            string storedFactor = storedValue.ToString();
+            if (!string.IsNullOrWhiteSpace(storedFactor))
+                return storedFactor;
+        }
+
         return EvaluatePhase1(body, org, world, efficiencyOverride: null).LimitingFactor;
     }
 
