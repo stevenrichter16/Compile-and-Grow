@@ -11,6 +11,7 @@ public static class StemModule
     private const string StemType = "stem";
     private const string BranchType = "branch";
     private const float GrowthEnergyCostPerUnit = 0.6f;
+    private const float GrowthGlucoseCostMultiplier = 0.5f;
 
     // ── Growth ──────────────────────────────────────────────────────
 
@@ -20,8 +21,9 @@ public static class StemModule
         if (distance <= 0f) return false;
 
         float materialMultiplier = GetMaterialCostMultiplier(body);
-        float cost = distance * GrowthEnergyCostPerUnit * materialMultiplier;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = distance * GrowthEnergyCostPerUnit * materialMultiplier;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainStem(body);
         main.Size += distance;
@@ -33,8 +35,9 @@ public static class StemModule
     public static bool GrowHorizontal(PlantBody body, OrganismEntity org, float distance, string direction)
     {
         if (distance <= 0f) return false;
-        float cost = distance * GrowthEnergyCostPerUnit * 0.8f;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = distance * GrowthEnergyCostPerUnit * 0.8f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainStem(body);
         main.Size += distance;
@@ -47,8 +50,9 @@ public static class StemModule
     public static bool GrowThick(PlantBody body, OrganismEntity org, float amount)
     {
         if (amount <= 0f) return false;
-        float cost = amount * GrowthEnergyCostPerUnit * 1.5f; // thickening is expensive
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = amount * GrowthEnergyCostPerUnit * 1.5f; // thickening is expensive
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainStem(body);
         main.TrySetProperty("thickness", GetPropertyFloat(main, "thickness") + amount);
@@ -60,8 +64,9 @@ public static class StemModule
     public static List<Dictionary<string, object>> Branch(PlantBody body, OrganismEntity org, int count, float height, float angle)
     {
         if (count <= 0) count = 1;
-        float cost = count * GrowthEnergyCostPerUnit * 0.5f;
-        if (!TrySpendEnergy(org, cost)) return null;
+        float energyCost = count * GrowthEnergyCostPerUnit * 0.5f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return null;
 
         PlantPart main = FindOrCreateMainStem(body);
         if (height < 0f) height = GetPropertyFloat(main, "height"); // default: top
@@ -86,8 +91,9 @@ public static class StemModule
     public static object GrowSegment(PlantBody body, OrganismEntity org, float length, float angle, string fromPart)
     {
         if (length <= 0f) return null;
-        float cost = length * GrowthEnergyCostPerUnit;
-        if (!TrySpendEnergy(org, cost)) return null;
+        float energyCost = length * GrowthEnergyCostPerUnit;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return null;
 
         string parentName = string.IsNullOrEmpty(fromPart) ? "stem_main" : fromPart;
         PlantPart parent = body.FindPart(parentName) ?? FindOrCreateMainStem(body);
@@ -105,8 +111,9 @@ public static class StemModule
     public static List<Dictionary<string, object>> Split(PlantBody body, OrganismEntity org, int count)
     {
         if (count <= 1) count = 2;
-        float cost = count * GrowthEnergyCostPerUnit * 0.4f;
-        if (!TrySpendEnergy(org, cost)) return null;
+        float energyCost = count * GrowthEnergyCostPerUnit * 0.4f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return null;
 
         PlantPart main = FindOrCreateMainStem(body);
         var results = new List<Dictionary<string, object>>(count);
@@ -279,8 +286,9 @@ public static class StemModule
     public static bool ProduceBark(PlantBody body, OrganismEntity org, float thickness)
     {
         PlantPart main = FindOrCreateMainStem(body);
-        float cost = thickness * GrowthEnergyCostPerUnit;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = thickness * GrowthEnergyCostPerUnit;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
         main.TrySetProperty("bark_thickness", (double)(GetPropertyFloat(main, "bark_thickness") + thickness));
         return true;
     }
@@ -289,8 +297,9 @@ public static class StemModule
     public static bool ProduceWax(PlantBody body, OrganismEntity org, float thickness)
     {
         PlantPart main = FindOrCreateMainStem(body);
-        float cost = thickness * GrowthEnergyCostPerUnit * 0.5f;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = thickness * GrowthEnergyCostPerUnit * 0.5f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
         main.TrySetProperty("wax_thickness", (double)(GetPropertyFloat(main, "wax_thickness") + thickness));
         return true;
     }
@@ -340,11 +349,26 @@ public static class StemModule
         return TrySpendResource(org, "energy", cost);
     }
 
-    private static bool TrySpendResource(OrganismEntity org, string key, float amount)
+    private static bool TrySpendGrowthResources(OrganismEntity org, float energyCost, float glucoseCost)
     {
+        if (!CanSpendResource(org, "energy", energyCost)) return false;
+        if (!CanSpendResource(org, "glucose", glucoseCost)) return false;
+        return TrySpendResource(org, "energy", energyCost) &&
+               TrySpendResource(org, "glucose", glucoseCost);
+    }
+
+    private static bool CanSpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (amount <= 0f) return true;
         if (!org.TryGetState(key, out object value)) return false;
         if (!TryConvertToDouble(value, out double current)) return false;
-        if (current < amount) return false;
+        return current >= amount;
+    }
+
+    private static bool TrySpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (amount <= 0f) return true;
+        if (!CanSpendResource(org, key, amount)) return false;
         org.TryAddState(key, -amount, out _, out _);
         return true;
     }

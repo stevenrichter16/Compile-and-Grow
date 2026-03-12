@@ -10,6 +10,7 @@ public static class LeafModule
 {
     private const string LeafType = "leaf";
     private const float GrowthEnergyCostPerCm2 = 0.3f;
+    private const float GrowthGlucoseCostMultiplier = 0.5f;
 
     // ── Growth ──────────────────────────────────────────────────────
 
@@ -17,8 +18,9 @@ public static class LeafModule
     public static object Grow(PlantBody body, OrganismEntity org, float area, string fromPart)
     {
         if (area <= 0f) return null;
-        float cost = area * GrowthEnergyCostPerCm2;
-        if (!TrySpendEnergy(org, cost)) return null;
+        float energyCost = area * GrowthEnergyCostPerCm2;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return null;
 
         // Inherit stomata from existing leaves before creating the new one
         float inheritedStomata = GetAverageStomataOpenness(body);
@@ -51,8 +53,9 @@ public static class LeafModule
     public static List<Dictionary<string, object>> GrowCount(PlantBody body, OrganismEntity org, int number, float sizeEach, string fromPart)
     {
         if (number <= 0 || sizeEach <= 0f) return null;
-        float totalCost = number * sizeEach * GrowthEnergyCostPerCm2;
-        if (!TrySpendEnergy(org, totalCost)) return null;
+        float totalEnergyCost = number * sizeEach * GrowthEnergyCostPerCm2;
+        float totalGlucoseCost = totalEnergyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, totalEnergyCost, totalGlucoseCost)) return null;
 
         PlantPart parent = null;
         if (!string.IsNullOrEmpty(fromPart))
@@ -217,8 +220,9 @@ public static class LeafModule
     public static object Regrow(PlantBody body, OrganismEntity org, string partName)
     {
         // Regrow is cheaper than new growth
-        float cost = 1f * GrowthEnergyCostPerCm2 * 0.5f;
-        if (!TrySpendEnergy(org, cost)) return null;
+        float energyCost = 1f * GrowthEnergyCostPerCm2 * 0.5f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return null;
 
         PlantPart existing = body.FindPart(partName);
         if (existing != null) return existing.CreateSnapshot(); // already exists
@@ -319,10 +323,30 @@ public static class LeafModule
 
     private static bool TrySpendEnergy(OrganismEntity org, float cost)
     {
-        if (!org.TryGetState("energy", out object eVal)) return false;
-        if (!TryConvertToDouble(eVal, out double energy)) return false;
-        if (energy < cost) return false;
-        org.TryAddState("energy", -cost, out _, out _);
+        return TrySpendResource(org, "energy", cost);
+    }
+
+    private static bool TrySpendGrowthResources(OrganismEntity org, float energyCost, float glucoseCost)
+    {
+        if (!CanSpendResource(org, "energy", energyCost)) return false;
+        if (!CanSpendResource(org, "glucose", glucoseCost)) return false;
+        return TrySpendResource(org, "energy", energyCost) &&
+               TrySpendResource(org, "glucose", glucoseCost);
+    }
+
+    private static bool CanSpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (amount <= 0f) return true;
+        if (!org.TryGetState(key, out object value)) return false;
+        if (!TryConvertToDouble(value, out double current)) return false;
+        return current >= amount;
+    }
+
+    private static bool TrySpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (amount <= 0f) return true;
+        if (!CanSpendResource(org, key, amount)) return false;
+        org.TryAddState(key, -amount, out _, out _);
         return true;
     }
 

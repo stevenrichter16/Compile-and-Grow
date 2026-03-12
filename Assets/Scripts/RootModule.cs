@@ -11,6 +11,7 @@ public static class RootModule
 {
     private const string RootType = "root";
     private const float GrowthEnergyCostPerUnit = 0.5f;
+    private const float GrowthGlucoseCostMultiplier = 0.5f;
     private const float BaseAbsorptionRate = 0.1f;
 
     // ── Growth ──────────────────────────────────────────────────────
@@ -19,8 +20,9 @@ public static class RootModule
     public static bool GrowDown(PlantBody body, OrganismEntity org, float distance)
     {
         if (distance <= 0f) return false;
-        float cost = distance * GrowthEnergyCostPerUnit;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = distance * GrowthEnergyCostPerUnit;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainRoot(body);
         main.Size += distance;
@@ -32,8 +34,9 @@ public static class RootModule
     public static bool GrowUp(PlantBody body, OrganismEntity org, float distance)
     {
         if (distance <= 0f) return false;
-        float cost = distance * GrowthEnergyCostPerUnit * 1.2f; // aerial roots cost more
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = distance * GrowthEnergyCostPerUnit * 1.2f; // aerial roots cost more
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainRoot(body);
         main.Size += distance;
@@ -45,8 +48,9 @@ public static class RootModule
     public static bool GrowWide(PlantBody body, OrganismEntity org, float distance)
     {
         if (distance <= 0f) return false;
-        float cost = distance * GrowthEnergyCostPerUnit * 0.8f; // lateral is cheaper
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = distance * GrowthEnergyCostPerUnit * 0.8f; // lateral is cheaper
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainRoot(body);
         main.Size += distance;
@@ -58,8 +62,9 @@ public static class RootModule
     public static bool GrowToward(PlantBody body, OrganismEntity org, string direction, float distance)
     {
         if (distance <= 0f) return false;
-        float cost = distance * GrowthEnergyCostPerUnit;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = distance * GrowthEnergyCostPerUnit;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         PlantPart main = FindOrCreateMainRoot(body);
         main.Size += distance;
@@ -71,8 +76,9 @@ public static class RootModule
     public static List<Dictionary<string, object>> Branch(PlantBody body, OrganismEntity org, int count, string fromPart)
     {
         if (count <= 0) count = 1;
-        float cost = count * GrowthEnergyCostPerUnit * 0.3f;
-        if (!TrySpendEnergy(org, cost)) return null;
+        float energyCost = count * GrowthEnergyCostPerUnit * 0.3f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return null;
 
         PlantPart parent = string.IsNullOrEmpty(fromPart) ? FindOrCreateMainRoot(body) : body.FindPart(fromPart);
         if (parent == null) return null;
@@ -98,8 +104,9 @@ public static class RootModule
         PlantPart part = body.FindPart(partName);
         if (part == null) return false;
 
-        float cost = amount * GrowthEnergyCostPerUnit * 0.5f;
-        if (!TrySpendEnergy(org, cost)) return false;
+        float energyCost = amount * GrowthEnergyCostPerUnit * 0.5f;
+        float glucoseCost = energyCost * GrowthGlucoseCostMultiplier;
+        if (!TrySpendGrowthResources(org, energyCost, glucoseCost)) return false;
 
         part.TrySetProperty("thickness", GetPropertyFloat(part, "thickness") + amount);
         return true;
@@ -271,10 +278,30 @@ public static class RootModule
 
     private static bool TrySpendEnergy(OrganismEntity org, float cost)
     {
-        if (!org.TryGetState("energy", out object eVal)) return false;
-        if (!TryConvertToDouble(eVal, out double energy)) return false;
-        if (energy < cost) return false;
-        org.TryAddState("energy", -cost, out _, out _);
+        return TrySpendResource(org, "energy", cost);
+    }
+
+    private static bool TrySpendGrowthResources(OrganismEntity org, float energyCost, float glucoseCost)
+    {
+        if (!CanSpendResource(org, "energy", energyCost)) return false;
+        if (!CanSpendResource(org, "glucose", glucoseCost)) return false;
+        return TrySpendResource(org, "energy", energyCost) &&
+               TrySpendResource(org, "glucose", glucoseCost);
+    }
+
+    private static bool CanSpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (amount <= 0f) return true;
+        if (!org.TryGetState(key, out object value)) return false;
+        if (!TryConvertToDouble(value, out double current)) return false;
+        return current >= amount;
+    }
+
+    private static bool TrySpendResource(OrganismEntity org, string key, float amount)
+    {
+        if (amount <= 0f) return true;
+        if (!CanSpendResource(org, key, amount)) return false;
+        org.TryAddState(key, -amount, out _, out _);
         return true;
     }
 
