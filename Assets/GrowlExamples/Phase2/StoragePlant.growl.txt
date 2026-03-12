@@ -23,16 +23,36 @@ fn intake():
     if org_get("water", 0) > 0.35:
         stem.store_water(0.15)
 
+@role("growth")
+fn growth():
+    glucose = org_get("glucose", 0)
+    reserve = org_get("stored_glucose", 0)
+    action = "wait"
+
+    if reserve > 0.45 and glucose > 0.18:
+        if org_memory_get("_storage_turn") != 1:
+            stem.grow_thick(0.20)
+            org_memory_set("_storage_turn", 1)
+            action = "stem_thicken"
+        else:
+            root.grow_down(0.40)
+            org_memory_set("_storage_turn", 0)
+            action = "root_extend"
+
+    print("E=" + str(org_get("net_energy_per_tick", 0)) +
+          " G=" + str(glucose) +
+          " W=" + str(org_get("water", 0)) +
+          " RS=" + str(org_get("root_supply_ratio", 0)) +
+          " Lim=" + photo.get_limiting_factor() +
+          " Act=" + action)
+
 @role("energy")
 fn energy():
-    gained = photo.process()
-    print("energy=" + str(gained) +
-          " g_store=" + str(org_get("stored_glucose", 0)) +
-          " e_store=" + str(org_get("stored_energy", 0)) +
-          " limiting=" + photo.get_limiting_factor())
+    photo.process()
 
 fn main():
     structure()
     control()
     intake()
     energy()
+    growth()

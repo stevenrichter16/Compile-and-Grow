@@ -10,8 +10,8 @@ public static class StemModule
 {
     private const string StemType = "stem";
     private const string BranchType = "branch";
-    private const float GrowthEnergyCostPerUnit = 0.6f;
-    private const float GrowthGlucoseCostMultiplier = 0.5f;
+    internal const float GrowthEnergyCostPerUnit = 0.6f;
+    internal const float GrowthGlucoseCostMultiplier = 0.6f;
 
     // ── Growth ──────────────────────────────────────────────────────
 

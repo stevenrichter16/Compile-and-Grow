@@ -1376,8 +1376,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "root_grow_down":
             {
                 float dist = (float)TryReadNumberOptional(args, index: 0, name: "distance", defaultValue: 1d);
-                float energyCost = dist * 0.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = dist * RootModule.GrowthEnergyCostPerUnit;
+                float glucoseCost = energyCost * RootModule.GrowthGlucoseCostMultiplier;
                 result = RootModule.GrowDown(body, organismEntity, dist);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1385,8 +1385,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "root_grow_up":
             {
                 float dist = (float)TryReadNumberOptional(args, index: 0, name: "distance", defaultValue: 1d);
-                float energyCost = dist * 0.5f * 1.2f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = dist * RootModule.GrowthEnergyCostPerUnit * 1.2f;
+                float glucoseCost = energyCost * RootModule.GrowthGlucoseCostMultiplier;
                 result = RootModule.GrowUp(body, organismEntity, dist);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1394,8 +1394,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "root_grow_wide":
             {
                 float dist = (float)TryReadNumberOptional(args, index: 0, name: "distance", defaultValue: 1d);
-                float energyCost = dist * 0.5f * 0.8f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = dist * RootModule.GrowthEnergyCostPerUnit * 0.8f;
+                float glucoseCost = energyCost * RootModule.GrowthGlucoseCostMultiplier;
                 result = RootModule.GrowWide(body, organismEntity, dist);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1406,8 +1406,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 if (TryGetArg(args, index: 0, name: "direction", out RuntimeCallArgument dirArg) && dirArg.Value != null)
                     dir = dirArg.Value.ToString();
                 float dist = (float)TryReadNumberOptional(args, index: 1, name: "distance", defaultValue: 1d);
-                float energyCost = dist * 0.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = dist * RootModule.GrowthEnergyCostPerUnit;
+                float glucoseCost = energyCost * RootModule.GrowthGlucoseCostMultiplier;
                 result = RootModule.GrowToward(body, organismEntity, dir, dist);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1419,8 +1419,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 string fromPart = null;
                 if (TryGetArg(args, index: 1, name: "from_part", out RuntimeCallArgument fpArg) && fpArg.Value != null)
                     fromPart = fpArg.Value.ToString();
-                float energyCost = count * 0.5f * 0.3f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = count * RootModule.GrowthEnergyCostPerUnit * 0.3f;
+                float glucoseCost = energyCost * RootModule.GrowthGlucoseCostMultiplier;
                 result = RootModule.Branch(body, organismEntity, count, fromPart);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1430,8 +1430,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
                 { result = null; return false; }
                 float amount = (float)TryReadNumberOptional(args, index: 1, name: "amount", defaultValue: 1d);
-                float energyCost = amount * 0.5f * 0.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = amount * RootModule.GrowthEnergyCostPerUnit * 0.5f;
+                float glucoseCost = energyCost * RootModule.GrowthGlucoseCostMultiplier;
                 result = RootModule.Thicken(body, organismEntity, partName, amount);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1532,8 +1532,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "stem_grow_up":
             {
                 float dist = (float)TryReadNumberOptional(args, index: 0, name: "distance", defaultValue: 1d);
-                float energyCost = dist * 0.6f * GetStemMaterialCostMultiplierForLogging(body);
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = dist * StemModule.GrowthEnergyCostPerUnit * GetStemMaterialCostMultiplierForLogging(body);
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.GrowUp(body, organismEntity, dist);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1544,8 +1544,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 string dir = null;
                 if (TryGetArg(args, index: 1, name: "direction", out RuntimeCallArgument dArg) && dArg.Value != null)
                     dir = dArg.Value.ToString();
-                float energyCost = dist * 0.6f * 0.8f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = dist * StemModule.GrowthEnergyCostPerUnit * 0.8f;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.GrowHorizontal(body, organismEntity, dist, dir);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1553,8 +1553,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "stem_grow_thick":
             {
                 float amount = (float)TryReadNumberOptional(args, index: 0, name: "amount", defaultValue: 1d);
-                float energyCost = amount * 0.6f * 1.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = amount * StemModule.GrowthEnergyCostPerUnit * 1.5f;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.GrowThick(body, organismEntity, amount);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1565,8 +1565,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 if (count <= 0) count = 1;
                 float height = (float)TryReadNumberOptional(args, index: 1, name: "height", defaultValue: -1d);
                 float angle = (float)TryReadNumberOptional(args, index: 2, name: "angle", defaultValue: 0.785); // 45 deg
-                float energyCost = count * 0.6f * 0.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = count * StemModule.GrowthEnergyCostPerUnit * 0.5f;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.Branch(body, organismEntity, count, height, angle);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1578,8 +1578,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 string fromPart = null;
                 if (TryGetArg(args, index: 2, name: "from_part", out RuntimeCallArgument fpArg) && fpArg.Value != null)
                     fromPart = fpArg.Value.ToString();
-                float energyCost = length * 0.6f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = length * StemModule.GrowthEnergyCostPerUnit;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.GrowSegment(body, organismEntity, length, angle, fromPart);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1588,8 +1588,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             {
                 int count = (int)TryReadIntegerOptional(args, index: 0, name: "count", defaultValue: 2L);
                 if (count <= 1) count = 2;
-                float energyCost = count * 0.6f * 0.4f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = count * StemModule.GrowthEnergyCostPerUnit * 0.4f;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.Split(body, organismEntity, count);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1673,8 +1673,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "stem_produce_bark":
             {
                 float thickness = (float)TryReadNumberOptional(args, index: 0, name: "thickness", defaultValue: 0.5);
-                float energyCost = thickness * 0.6f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = thickness * StemModule.GrowthEnergyCostPerUnit;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.ProduceBark(body, organismEntity, thickness);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1682,8 +1682,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             case "stem_produce_wax":
             {
                 float thickness = (float)TryReadNumberOptional(args, index: 0, name: "thickness", defaultValue: 0.5);
-                float energyCost = thickness * 0.6f * 0.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = thickness * StemModule.GrowthEnergyCostPerUnit * 0.5f;
+                float glucoseCost = energyCost * StemModule.GrowthGlucoseCostMultiplier;
                 result = StemModule.ProduceWax(body, organismEntity, thickness);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1710,8 +1710,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 string fromPart = null;
                 if (TryGetArg(args, index: 1, name: "from_part", out RuntimeCallArgument fpArg) && fpArg.Value != null)
                     fromPart = fpArg.Value.ToString();
-                float energyCost = area * 0.3f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = area * LeafModule.GrowthEnergyCostPerCm2;
+                float glucoseCost = energyCost * LeafModule.GrowthGlucoseCostMultiplier;
                 result = LeafModule.Grow(body, organismEntity, area, fromPart);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1723,8 +1723,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
                 string fromPart = null;
                 if (TryGetArg(args, index: 2, name: "from_part", out RuntimeCallArgument fpArg) && fpArg.Value != null)
                     fromPart = fpArg.Value.ToString();
-                float energyCost = number * sizeEach * 0.3f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = number * sizeEach * LeafModule.GrowthEnergyCostPerCm2;
+                float glucoseCost = energyCost * LeafModule.GrowthGlucoseCostMultiplier;
                 result = LeafModule.GrowCount(body, organismEntity, number, sizeEach, fromPart);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;
@@ -1820,8 +1820,8 @@ public sealed class GrowlGameStateBridge : MonoBehaviour, IGrowlRuntimeHost
             {
                 if (!TryReadString(args, index: 0, name: "part_name", out string partName, out errorMessage))
                 { result = null; return false; }
-                float energyCost = 1f * 0.3f * 0.5f;
-                float glucoseCost = energyCost * 0.5f;
+                float energyCost = LeafModule.GrowthEnergyCostPerCm2 * 0.5f;
+                float glucoseCost = energyCost * LeafModule.GrowthGlucoseCostMultiplier;
                 result = LeafModule.Regrow(body, organismEntity, partName);
                 MaybeLogGrowthResourceFailure(name, result, energyCost, glucoseCost);
                 return true;

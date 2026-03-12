@@ -37,6 +37,23 @@ public class Phase2GrowthResourceTests
     }
 
     [Test]
+    public void RootGrowth_SucceedsWithEnergyAndGlucose_AndUsesLowerGlucoseCostThanLeaves()
+    {
+        var harness = CreateHarness();
+        harness.Org.TrySetState("energy", 2.0d, out _);
+        harness.Org.TrySetState("glucose", 1.0d, out _);
+
+        double energyBefore = GetStateNumber(harness.Org, "energy");
+        double glucoseBefore = GetStateNumber(harness.Org, "glucose");
+
+        bool grew = RootModule.GrowDown(harness.Body, harness.Org, 1.0f);
+
+        Assert.That(grew, Is.True);
+        Assert.That(GetStateNumber(harness.Org, "energy"), Is.EqualTo(energyBefore - 0.5d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(glucoseBefore - 0.15d).Within(0.0001d));
+    }
+
+    [Test]
     public void LeafGrowth_SucceedsWithEnergyAndGlucose_AndSpendsBoth()
     {
         var harness = CreateHarness();
@@ -51,7 +68,7 @@ public class Phase2GrowthResourceTests
 
         Assert.That(result, Is.Not.Null);
         Assert.That(GetStateNumber(harness.Org, "energy"), Is.EqualTo(energyBefore - 0.3d).Within(0.0001d));
-        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(glucoseBefore - 0.15d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(glucoseBefore - 0.12d).Within(0.0001d));
         Assert.That(harness.Body.CountPartsByType("leaf"), Is.EqualTo(1));
     }
 
@@ -71,7 +88,7 @@ public class Phase2GrowthResourceTests
 
         Assert.That(grew, Is.True);
         Assert.That(GetStateNumber(harness.Org, "energy"), Is.EqualTo(energyBefore - 0.6d).Within(0.0001d));
-        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(glucoseBefore - 0.3d).Within(0.0001d));
+        Assert.That(GetStateNumber(harness.Org, "glucose"), Is.EqualTo(glucoseBefore - 0.36d).Within(0.0001d));
     }
 
     [Test]
@@ -144,7 +161,7 @@ public class Phase2GrowthResourceTests
 
         string log = string.Join("\n", harness.Bridge.ActionLog);
         Assert.That(log, Does.Contain("leaf.grow failed"));
-        Assert.That(log, Does.Contain("needs 0.30 energy and 0.15 glucose"));
+        Assert.That(log, Does.Contain("needs 0.30 energy and 0.12 glucose"));
         Assert.That(log, Does.Contain("have 1.00 energy and 0.00 glucose"));
     }
 
@@ -170,7 +187,7 @@ public class Phase2GrowthResourceTests
 
         string log = string.Join("\n", harness.Bridge.ActionLog);
         Assert.That(log, Does.Contain("stem.grow.up failed"));
-        Assert.That(log, Does.Contain("needs 0.60 energy and 0.30 glucose"));
+        Assert.That(log, Does.Contain("needs 0.60 energy and 0.36 glucose"));
         Assert.That(log, Does.Contain("have 0.20 energy and 0.10 glucose"));
     }
 

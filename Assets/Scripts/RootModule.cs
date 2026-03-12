@@ -10,8 +10,8 @@ using UnityEngine;
 public static class RootModule
 {
     private const string RootType = "root";
-    private const float GrowthEnergyCostPerUnit = 0.5f;
-    private const float GrowthGlucoseCostMultiplier = 0.5f;
+    internal const float GrowthEnergyCostPerUnit = 0.5f;
+    internal const float GrowthGlucoseCostMultiplier = 0.3f;
     private const float BaseAbsorptionRate = 0.1f;
 
     // ── Growth ──────────────────────────────────────────────────────

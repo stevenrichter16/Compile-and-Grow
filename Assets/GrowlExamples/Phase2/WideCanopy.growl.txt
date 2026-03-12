@@ -30,17 +30,40 @@ fn control():
 fn intake():
     root.absorb("H2O")
 
+@role("growth")
+fn growth():
+    glucose = org_get("glucose", 0)
+    root_supply = org_get("root_supply_ratio", 0)
+    action = "wait"
+
+    if glucose > 0.32:
+        if root_supply >= 0.95:
+            if org_memory_get("_canopy_turn") != 1:
+                leaf.grow(0.28, "stem_main")
+                org_memory_set("_canopy_turn", 1)
+                action = "leaf_expand_a"
+            else:
+                leaf.grow(0.22, "stem_main")
+                org_memory_set("_canopy_turn", 0)
+                action = "leaf_expand_b"
+        elif root_supply < 0.85:
+            root.grow_down(0.35)
+            action = "root_recover"
+
+    print("E=" + str(org_get("net_energy_per_tick", 0)) +
+          " G=" + str(glucose) +
+          " W=" + str(org_get("water", 0)) +
+          " RS=" + str(root_supply) +
+          " Lim=" + photo.get_limiting_factor() +
+          " Act=" + action)
+
 @role("energy")
 fn energy():
-    gained = photo.process()
-    print("energy=" + str(gained) +
-          " light=" + str(org_get("light_capture_pct", 0)) +
-          " root_supply=" + str(org_get("root_supply_ratio", 0)) +
-          " leaf_util=" + str(org_get("leaf_utilization", 0)) +
-          " limiting=" + photo.get_limiting_factor())
+    photo.process()
 
 fn main():
     structure()
     control()
     intake()
     energy()
+    growth()

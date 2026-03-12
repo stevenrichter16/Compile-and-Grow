@@ -30,16 +30,47 @@ fn intake():
     if org_get("water", 0) > 0.7:
         stem.store_water(0.08)
 
+@role("growth")
+fn growth():
+    glucose = org_get("glucose", 0)
+    root_supply = org_get("root_supply_ratio", 0)
+    water = org_get("water", 0)
+    action = "wait"
+
+    if glucose > 0.28 and water > 0.18:
+        turn = org_memory_get("_mixed_growth_turn")
+
+        if turn == 0:
+            if root_supply < 0.92:
+                root.grow_down(0.25)
+                action = "root_recover"
+            else:
+                leaf.grow(0.20, "stem_main")
+                action = "leaf_expand"
+            org_memory_set("_mixed_growth_turn", 1)
+        elif turn == 1:
+            stem.grow_up(0.15)
+            action = "stem_extend"
+            org_memory_set("_mixed_growth_turn", 2)
+        else:
+            root.grow_down(0.20)
+            action = "root_extend"
+            org_memory_set("_mixed_growth_turn", 0)
+
+    print("E=" + str(org_get("net_energy_per_tick", 0)) +
+          " G=" + str(glucose) +
+          " W=" + str(water) +
+          " RS=" + str(root_supply) +
+          " Lim=" + photo.get_limiting_factor() +
+          " Act=" + action)
+
 @role("energy")
 fn energy():
-    gained = photo.process()
-    print("energy=" + str(gained) +
-          " glucose=" + str(org_get("glucose", 0)) +
-          " stored_glucose=" + str(org_get("stored_glucose", 0)) +
-          " limiting=" + photo.get_limiting_factor())
+    photo.process()
 
 fn main():
     structure()
     control()
     intake()
     energy()
+    growth()

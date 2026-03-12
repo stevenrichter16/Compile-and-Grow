@@ -9,8 +9,8 @@ using UnityEngine;
 public static class LeafModule
 {
     private const string LeafType = "leaf";
-    private const float GrowthEnergyCostPerCm2 = 0.3f;
-    private const float GrowthGlucoseCostMultiplier = 0.5f;
+    internal const float GrowthEnergyCostPerCm2 = 0.3f;
+    internal const float GrowthGlucoseCostMultiplier = 0.4f;
 
     // ── Growth ──────────────────────────────────────────────────────
 

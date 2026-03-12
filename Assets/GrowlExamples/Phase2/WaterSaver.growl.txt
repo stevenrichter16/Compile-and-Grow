@@ -28,16 +28,30 @@ fn intake():
     if org_get("water", 0) > 0.45:
         stem.store_water(0.12)
 
+@role("growth")
+fn growth():
+    water = org_get("water", 0)
+    action = "steady"
+
+    if water < 0.3:
+        action = "conserve"
+    elif water > 0.45:
+        action = "store_water"
+
+    print("E=" + str(org_get("net_energy_per_tick", 0)) +
+          " G=" + str(org_get("glucose", 0)) +
+          " W=" + str(water) +
+          " RS=" + str(org_get("root_supply_ratio", 0)) +
+          " Lim=" + photo.get_limiting_factor() +
+          " Act=" + action)
+
 @role("energy")
 fn energy():
-    gained = photo.process()
-    print("energy=" + str(gained) +
-          " stored_water=" + str(org_get("stored_water", 0)) +
-          " water_eff=" + str(org_get("water_efficiency", 0)) +
-          " limiting=" + photo.get_limiting_factor())
+    photo.process()
 
 fn main():
     structure()
     control()
     intake()
     energy()
+    growth()
