@@ -424,6 +424,196 @@ Policies.Storage.GlucosePriority = 3
 
 This keeps recipes valuable while still letting the player customize them.
 
+## Reactive / Dataflow Commission Examples
+
+Reactive / dataflow Growl is useful when the player is automating behavior that would be tedious to manage through UI sliders, toggles, and per-part menus.
+
+The point of these examples is not just syntax. The point is that the player is writing plant behavior that keeps running and adapting on its own once deployed.
+
+### Simple Example 1: Drought Windowbox Crop
+
+Commission: "Make a food crop for rooftop trays with inconsistent watering."
+
+```growl
+Recipes.BasicCrop.Apply()
+
+signal Dry when State.Water < Low
+signal Stable when Metrics.RootSupply > Strong
+
+on Dry:
+    Policies.Stomata.Mode = Conservative
+    Policies.Storage.GlucosePriority = 3
+
+on Stable:
+    Plant.Roots.Foragers.Absorb("H2O")
+    Plant.Leaves.Canopy.TrackLight(True)
+
+when Stores.Glucose.IsHigh():
+    Plant.Fruit.Cluster.Grow(1)
+```
+
+Explanation:
+
+- `Recipes.BasicCrop.Apply()` gives the player a viable starter organism and defines named handles such as `Plant.Roots.Foragers`, `Plant.Leaves.Canopy`, and `Plant.Fruit.Cluster`.
+- `signal Dry` and `signal Stable` create readable named conditions instead of forcing the player to repeat the same threshold checks everywhere.
+- `on Dry` switches the plant into water-saving behavior and increases storage preference, which is exactly the kind of repetitive response logic that is annoying to configure through UI.
+- `on Stable` restores active intake and light tracking once the plant is no longer under stress.
+- `when Stores.Glucose.IsHigh()` turns surplus glucose into fruit growth, so the commission becomes a behavior program instead of a fixed growth preset.
+
+### Simple Example 2: Self-Shading Window Vine
+
+Commission: "Keep this west-facing room cooler in the afternoon without killing the plant."
+
+```growl
+Recipes.WindowVine.Apply()
+
+signal HarshLight when Env.Light.Intensity > High
+signal Dry when State.Water < Low
+
+on HarshLight:
+    Plant.Leaves.Awning.TrackLight(True)
+    Plant.Leaves.Awning.Grow(1)
+
+on Dry:
+    Policies.Stomata.Mode = Conservative
+
+when Metrics.RootSupply.IsStrong() and Stores.Glucose.IsHigh():
+    Plant.Branches.Awning.Grow(1)
+```
+
+Explanation:
+
+- `Recipes.WindowVine.Apply()` defines a vine-oriented plant shape and handles such as `Plant.Leaves.Awning` and `Plant.Branches.Awning`.
+- `signal HarshLight` makes the commission about environmental sensing rather than manual leaf positioning.
+- `on HarshLight` grows and reorients the shading canopy automatically, which is more satisfying to script than to micromanage part by part.
+- `on Dry` prevents the plant from overcommitting to shade growth when water becomes a constraint.
+- The final `when` clause ties structural expansion to healthy root supply and sugar reserves, so the vine only spreads when it can afford to.
+
+### Simple Example 3: Night Marker Moss
+
+Commission: "Mark a safe path after dusk, but stay dim in daytime."
+
+```growl
+Recipes.GlowMoss.Apply()
+
+signal Night when Env.Light.Phase == Night
+signal Day when Env.Light.Phase != Night
+signal Dry when State.Water < Low
+
+on Night:
+    Products.MarkerGlow.Emit(1)
+    Policies.Stomata.Mode = Balanced
+
+on Day:
+    Products.MarkerGlow.Stop()
+    Plant.Surface.Patch.Camouflage = Dark
+
+on Dry:
+    Policies.Stomata.Mode = Conservative
+```
+
+Explanation:
+
+- `Recipes.GlowMoss.Apply()` defines the core moss structure plus a product/output handle such as `Products.MarkerGlow`.
+- The day/night signals let the player write a very clear schedule-driven behavior instead of clicking between separate daytime and nighttime modes in UI.
+- `on Night` activates the marker output and keeps the plant operational.
+- `on Day` shuts the effect off and returns the surface to a less conspicuous state.
+- `on Dry` adds a separate water-preservation rule, which shows how multiple concerns can layer cleanly in code.
+
+### Complex Example 4: Structural Brace Vine
+
+Commission: "Climb a damaged catwalk, brace weak sections, and thicken if the structure starts shifting."
+
+```growl
+Recipes.BraceVine.Apply()
+
+signal SupportSeen when Plant.Stems.Main.TouchingSupport()
+signal LoadHigh when State.Stress > Medium
+signal Dry when State.Water < Low
+signal Damage when Events.Damage
+
+flow Stores.Glucose -> Plant.Stems.Main when SupportSeen
+flow Stores.Water -> Plant.Branches.Braces when LoadHigh
+
+on SupportSeen:
+    Plant.Stems.Main.AttachTo("catwalk_rail")
+    Plant.Branches.Braces.GrowToward(Support)
+    Plant.Roots.Anchors.Anchor(2)
+
+on LoadHigh:
+    Plant.Stems.Main.Grow(1)
+    Plant.Stems.Main.Thickness = Thick
+    Plant.Branches.Braces.SupportWeight(All)
+
+on Dry:
+    Policies.Stomata.Mode = Conservative
+    Plant.Branches.Braces.Hold()
+
+on Damage:
+    Plant.Stems.Main.Heal(1)
+    Plant.Roots.Anchors.Grow(1)
+```
+
+Explanation:
+
+- `Recipes.BraceVine.Apply()` is especially important here because it can define recipe-owned handles such as `Plant.Stems.Main`, `Plant.Branches.Braces`, and `Plant.Roots.Anchors`.
+- The signals turn structural support into a reactive system: detect support, detect strain, detect drought, detect damage.
+- The `flow` lines express resource routing as a policy instead of a series of manual per-tick storage calls.
+- `on SupportSeen` attaches, extends braces, and strengthens anchors as a single coordinated response.
+- `on LoadHigh` thickens and reinforces the plant only when stress demands it.
+- `on Dry` pauses aggressive brace growth, which prevents the structure-solving behavior from blindly killing the organism.
+- `on Damage` enables automatic recovery and re-anchoring, which is exactly the sort of repeated repair behavior that benefits from code.
+
+### Complex Example 5: Purifier Reed Bed
+
+Commission: "Clean contaminated runoff, vent fewer toxins into the air, and signal when water is safe."
+
+```growl
+Recipes.FilterReed.Apply()
+
+signal Contaminated when Env.Soil.Toxins.Any()
+signal AirHazard when Env.Air.Chemicals.Any()
+signal Overflow when Stores.Water.IsHigh()
+signal Sick when State.Stress > High
+
+flow Plant.Roots.Intake.Water -> Plant.Stems.FilterBed
+flow Plant.Stems.FilterBed -> Products.FilterResin when Contaminated
+
+on Contaminated:
+    Plant.Roots.Intake.AbsorbFiltered(["H2O"])
+    Plant.Roots.Intake.Exude("binding_agent", 1)
+    Products.FilterResin.Produce(1)
+
+on AirHazard:
+    Plant.Leaves.Vents.FilterGas("toxin", "block")
+    Plant.Leaves.Vents.Coating = Waxy
+
+on Overflow:
+    Products.CleanWaterSignal.Emit(1)
+
+on Sick:
+    Plant.Defense.ResistDisease("all", 2)
+    Plant.Defense.Fever(1)
+    Plant.Defense.QuarantineDamaged()
+```
+
+Explanation:
+
+- `Recipes.FilterReed.Apply()` defines the specialized intake, vent, filter, and signal handles that this commission needs.
+- The four signals break the problem into understandable operating modes: polluted water, polluted air, full storage, and organism distress.
+- The `flow` rules make purification feel like building a living processing pipeline rather than manually toggling production steps.
+- `on Contaminated` shifts the root system into filtered intake and byproduct production.
+- `on AirHazard` changes how the leaf/vent surface behaves so the plant solves both water and air problems together.
+- `on Overflow` lets the plant tell the player or client that safe water is available.
+- `on Sick` adds a self-protection routine, which is important for complex commissions where the environment fights back.
+
+These examples show the kind of Growl behavior that should feel rewarding to write:
+
+- recurring responses to changing conditions
+- coordinated actions across multiple part groups
+- recipe-defined handles that make scripts readable
+- automation that would be tedious to configure with a purely menu-driven UI
+
 ## Design Benefits
 
 This mix should improve Growl in the following ways:
