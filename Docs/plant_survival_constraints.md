@@ -16,7 +16,7 @@ The player writes a Growl program, compiles it, and deploys it into a chosen env
 
 This means:
 
-- **The plant's code must handle everything.** There is no pause button, no mid-run stomata slider, no emergency root-growing UI. If the player didn't write drought-response logic, the plant dies in a drought. This is the core design pressure that makes reactive Growl (`signal`, `on`, `when`) essential rather than optional.
+- **The plant's code must handle everything.** There is no pause button, no mid-run stomata slider, no emergency root-growing UI. If the player didn't write drought-response logic, the plant dies in a drought. This is the core design pressure that makes reactive Growl (`when`) essential rather than optional.
 - **Failure stages serve two purposes.** During the run, they give the plant's own reactive code time to detect and respond to problems. After the run, they give the player observable events to learn from. Both purposes matter.
 - **Stores buy time for the code, not the player.** A storage plant is valuable because its reactive logic has more ticks to detect a problem and adapt before the cascade reaches Stage 3. A zero-storage plant's code must react immediately or the plant starts shedding.
 - **The iteration loop is where player skill lives.** The player's craft is in writing code that handles conditions they anticipate — and survives conditions they didn't. Each deployment teaches the player something. The quality of the reactive code IS the player's skill expression.
@@ -199,9 +199,9 @@ This is the most immediate, tick-by-tick tension and the one that most rewards r
 - **Open stomata** → more CO2 → more photosynthesis → more glucose income
 - **Open stomata** → more water loss → faster store depletion → closer to wilting
 
-In stable wet conditions, open stomata are clearly correct. In drought, they're clearly wrong. In variable conditions — which is where most interesting commissions live — the player must write code that shifts stomata openness based on water state. This is the tradeoff that makes `signal Dry` and `on Dry:` feel necessary rather than optional.
+In stable wet conditions, open stomata are clearly correct. In drought, they're clearly wrong. In variable conditions — which is where most interesting commissions live — the player must write code that shifts stomata openness based on water state. This is the tradeoff that makes `when Dry:` feel necessary rather than optional.
 
-A player who never adjusts stomata will either waste water in abundance or starve for CO2 in drought. Reactive code solves both.
+A plant whose code never adjusts stomata will either waste water in abundance or starve for CO2 in drought. Reactive code solves both.
 
 ### 2. Growth vs. Storage
 
@@ -245,7 +245,7 @@ Failure should be gradual, visible, and legible — not instant death. Gradual f
 
 Every failure cascade passes through three stages. This is the most important structural rule for game feel:
 
-**Stage 1: Store Depletion (warning).** The resource balance goes negative. Stores begin draining. Metrics change. The plant is still fully functional, but the trend is visible. During the run, this is where well-written reactive code should detect the problem — `signal Dry when State.Water < Low` fires here. After the run, this is where the player sees "my code should have caught this earlier."
+**Stage 1: Store Depletion (warning).** The resource balance goes negative. Stores begin draining. Metrics change. The plant is still fully functional, but the trend is visible. During the run, this is where well-written reactive code should detect the problem — `when Dry:` fires here. After the run, this is where the player sees "my code should have caught this earlier."
 
 **Stage 2: Wilting (degraded).** Stores hit a low threshold. The plant enters a visibly degraded state. Wilting leaves have reduced photosynthetic efficiency. Stressed roots have reduced absorption. The plant is weaker but still intact — no organs are lost. If the plant's code includes stress-response logic, it can still stabilize here. This stage must be visually distinct so the player can spot it in the run timeline.
 
@@ -257,7 +257,7 @@ How fast a plant moves through these stages matters enormously. The key principl
 
 Suggested pacing guidelines:
 
-- Stage 1 (store depletion) should last long enough for reactive code to fire. For a plant with moderate stores, this should be at least 10-20 ticks of sustained deficit. This is the window where `on Dry:` or `when Stores.Glucose.IsLow():` should activate.
+- Stage 1 (store depletion) should last long enough for reactive code to fire. For a plant with moderate stores, this should be at least 10-20 ticks of sustained deficit. This is the window where `when Dry:` or `when Stores.Glucose.IsLow():` should activate.
 - Stage 2 (wilting) should last at least 5-10 ticks before shedding begins. This gives the plant's code a second chance to respond to worsening conditions, and gives the player a visually distinct event to find when reviewing the run.
 - Stage 3 (shedding) should happen one organ at a time, not all at once. Each shed event is a distinct moment in the run timeline.
 
@@ -308,7 +308,7 @@ When the underlying problem resolves — either because the environment changes 
 
 Slow recovery would punish the player's plant even after its code successfully handled the crisis. The real cost of failure is the lost production during wilting and any organs shed during Stage 3. Those are lasting consequences. Making the plant stay degraded after the crisis has passed adds no interesting gameplay — it just makes a successful adaptation feel unrewarding to watch.
 
-Shed organs are the permanent cost. They must be regrown from scratch, which takes glucose and ticks. That's what makes prevention (good initial design + early reactive logic) more valuable than recovery (shedding and rebuilding). The player sees this in the run timeline: "my plant wilted at tick 35, shed two leaves at tick 42, recovered at tick 45, but then spent ticks 45-80 regrowing what it lost. Next iteration, I'll add `signal Dry` earlier so it never reaches Stage 3."
+Shed organs are the permanent cost. They must be regrown from scratch, which takes glucose and ticks. That's what makes prevention (good initial design + early reactive logic) more valuable than recovery (shedding and rebuilding). The player sees this in the run timeline: "my plant wilted at tick 35, shed two leaves at tick 42, recovered at tick 45, but then spent ticks 45-80 regrowing what it lost. Next iteration, I'll trigger `when Dry:` at a higher water threshold so it never reaches Stage 3."
 
 ### Shed Material as a Resource
 
@@ -336,7 +336,7 @@ This has several design benefits:
 when Plant.Leaves.Canopy.Count > 4 and Metrics.Canopy.ShadingLoss > High:
     Plant.Leaves.Canopy.ShedOldest(1)
 
-on Dry:
+when Dry:
     Plant.Leaves.Canopy.ShedOldest(2)
 ```
 
@@ -379,12 +379,12 @@ Rules for legible failure:
 
 - Shedding never happens without at least several ticks of visible wilting first, so the player can spot the crisis point in the timeline
 - The run log must clearly show *why* the plant is shedding (water deficit, glucose deficit) with specific numbers
-- The player should be able to identify which `signal` or `on` handler they should have written — or which existing handler fired too late — by reviewing the timeline
+- The player should be able to identify which `when` handler they should have written — or which existing handler fired too late — by reviewing the timeline
 - Shedding the minimum viable organs (the last leaf, last root, or only stem) should be a visually dramatic event, not a quiet metric change. This is the plant's death scene. It should be memorable enough that the player is motivated to prevent it next time
 
 ### Static Programs Should Work for Simple Commissions
 
-Reactive code (`signal`, `on`, `when`) is the player's most powerful tool. But if every commission requires reactive code to survive, beginners will feel overwhelmed. Simple commissions in stable environments should be completable with fully static programs — just morphology and fixed stomata settings. This lets the player learn organism design first and reactive coding second.
+Reactive code (`when`) is the player's most powerful tool. But if every commission requires reactive code to survive, beginners will feel overwhelmed. Simple commissions in stable environments should be completable with fully static programs — just morphology and fixed stomata settings. This lets the player learn organism design first and reactive coding second.
 
 The progression: static programs work for easy commissions → environmental variability makes static programs fail → the player learns reactive code to handle variability → reactive code becomes the main skill expression for harder commissions. Each step should feel like a natural escalation, not a wall.
 
