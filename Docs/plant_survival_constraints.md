@@ -113,6 +113,14 @@ competition factor decreases as total root area in the same zone increases
 
 This creates the depth-vs-breadth tradeoff for roots. Deep roots access a separate water pool (groundwater) and don't compete with shallow roots. Spreading roots horizontally avoids competition more than stacking them vertically. The player can solve root competition through architecture, not just by adding more roots.
 
+**Visibility concern:** Self-shading is visually intuitive — the player can see leaves blocking each other. Root competition happens underground and is invisible. If the player can't see why their 4th root isn't absorbing much, the mechanic feels arbitrary rather than discoverable. The game needs to surface root competition clearly through metrics or visualization:
+
+- `Metrics.Roots.ZoneOverlap` or similar should tell the player when roots are competing
+- A soil cross-section view or root map could show water depletion zones
+- The limiting factor system should distinguish between "not enough roots" and "roots competing for the same water"
+
+If root competition can't be made visible and legible to the player, it should be simplified or deferred. An invisible constraint that punishes the player without teaching them is worse than no constraint at all.
+
 ### Why These Mechanics Matter
 
 Self-shading and root competition are better than arbitrary diminishing return penalties because:
@@ -281,9 +289,74 @@ A plant with no stores can still go from healthy to shedding quickly. That's cor
 
 When structural load is introduced, failure follows a simpler pattern: load exceeds capacity → heaviest organ above the failure point detaches or takes damage → plant loses the investment but remains alive.
 
-### Recovery Should Feel Earned
+### Recovery Should Feel Quick Once Earned
 
-When a plant recovers from wilting, it should not snap back to full health instantly. Wilted leaves should regain efficiency over several ticks. Shed organs must be regrown from scratch (costing glucose and time). This makes prevention more valuable than recovery, which rewards good design and reactive code over brute-force regrowth.
+An earlier draft said recovery should be slow — wilted leaves regaining efficiency "over several ticks" — to make prevention feel more valuable than cure. But this risks creating a frustration loop: the player diagnoses the problem, fixes it, and then has to sit through a mandatory recovery period where nothing interesting is happening. That's a time tax, not a meaningful consequence.
+
+Better rule: **once the underlying problem is fixed, recovery should be fast.** If the player adds enough roots to restore water balance, wilted leaves should bounce back within 2-3 ticks, not 10. The cost of failure is the lost production *during* the wilting period and the lost organs from shedding — those are real consequences. Making the player wait after they've already solved the problem adds frustration without adding decisions.
+
+Shed organs are the real cost. They must be regrown from scratch, which takes glucose and time. That's the lasting consequence that makes prevention valuable. But wilting itself — the degraded-but-intact state — should reverse quickly once conditions improve. This keeps the game responsive to player action.
+
+### Shed Material as a Resource
+
+Organ shedding should not be pure loss. In real biology, fallen leaves decompose into soil nutrients. Dead roots leave organic matter that improves soil structure. Plants that drop organs are recycling material, not destroying it.
+
+In gameplay terms, shed organs should return something to the plant:
+
+**Nutrient recovery from shed organs.** When a leaf drops or a root is shed, a fraction of its glucose investment should be recovered — either returned to glucose stores directly (reabsorption before shedding, which real plants do) or deposited into the soil as organic matter that roots can later reclaim.
+
+Suggested recovery rate: 20-40% of the organ's original growth cost. Not enough to make shedding *profitable*, but enough that it doesn't feel like the player's investment was entirely wasted. The exact percentage is a tuning parameter.
+
+This has several design benefits:
+
+1. **Shedding becomes a strategic tool, not just a failure state.** A player might deliberately shed old, self-shaded leaves that are costing more maintenance than they earn, and reclaim some of that glucose for a better-placed leaf. This turns pruning into a skill.
+
+2. **It softens the failure cascade.** If shedding returns some glucose, the plant's stores get a small bump with each shed organ. This slows the cascade and gives the player slightly more time to react. The cascade is still dangerous — the plant is shrinking — but it's not a pure death spiral.
+
+3. **It connects to future composting/soil mechanics.** In later phases, shed material becoming soil nutrients opens up whole gameplay loops: companion planting, nutrient cycling, ecosystem design. Building the "shed material has value" concept into Phase 1 means these later mechanics feel like natural extensions rather than bolted-on systems.
+
+4. **It's biologically real.** Plants reabsorb nitrogen and phosphorus from leaves before dropping them (autumn senescence). Deciduous trees are not wasting their leaves — they're recycling them. This makes the mechanic feel grounded rather than gamey.
+
+**Deliberate shedding as a player action.** Beyond automatic shedding during failure cascades, the player should be able to deliberately drop an organ:
+
+```growl
+Plant.Leaves.Canopy[2].Shed()
+```
+
+This would remove the organ, recover a fraction of its cost, and reduce maintenance. It's the code equivalent of pruning. A player who realizes their 5th leaf is self-shaded and costing more than it earns should be able to cut it, reclaim some glucose, and invest that glucose in a better-placed leaf or a branch that reduces future self-shading.
+
+Pruning should feel like an optimization tool, not a punishment. The player who prunes intelligently is playing the architecture game at a higher level than the player who just adds organs and hopes.
+
+## Constraints That Risk Being Unfun
+
+Not every realistic constraint makes for good gameplay. Some constraints that are biologically accurate could make the game tedious or frustrating if implemented naively.
+
+### Maintenance Cost Must Not Feel Like a Treadmill
+
+The maintenance floor creates the core economic tension — good. But if the player's primary experience is "my plant is always about to die unless I keep optimizing," the game becomes stressful rather than creative. The maintenance cost should create a meaningful floor, not a constant crisis.
+
+Guideline: a reasonably built plant in a stable environment should comfortably exceed its maintenance cost with meaningful surplus. The player should spend most of their time thinking about what to do with surplus glucose, not whether they can afford to exist. Maintenance becomes the interesting constraint during environmental stress (drought, shade) or when the player is pushing the limits of their design — not during normal play.
+
+### Water Loss Should Not Require Constant Babysitting
+
+The stomata tradeoff is the most interesting tick-by-tick tension. But if the player has to constantly adjust stomata to avoid water stress, it stops being interesting and starts being a chore. The reactive code system (`signal Dry`, `on Dry:`) is the solution — once the player writes the adaptation logic, the plant should handle water fluctuations autonomously. The game should strongly encourage writing these reactive rules early, perhaps through tutorial commissions that specifically require them.
+
+The risk: if the game makes it *possible* to survive without reactive code (through constant manual stomata adjustment in a UI), some players will do that instead of learning to code. This would undermine the core value proposition. The game should make manual adjustment deliberately cumbersome relative to writing a few lines of reactive Growl.
+
+### Self-Shading Should Be Gentle at Low Organ Counts
+
+Self-shading creates a great architecture tradeoff at scale. But for a beginning player with 2-3 leaves, the shading penalty should be minimal. If the player's second leaf is noticeably less productive than their first, they'll feel punished before they've had a chance to learn. The shading curve should be gentle for the first few leaves and steepen as the canopy grows. The player discovers self-shading as a mid-game optimization problem, not a beginner trap.
+
+### Organ Shedding Must Not Feel Like Losing a Save File
+
+Even with nutrient recovery and gradual pacing, losing organs that the player spent time growing can feel bad. The key is ensuring the player always feels like they could have prevented it. If the failure cascade is legible (clear metrics, visible wilting, adequate warning time), shedding feels like a consequence the player understands. If it happens suddenly or for reasons the player can't diagnose, it feels like the game cheated them.
+
+Rules to prevent frustration:
+
+- Shedding never happens without at least several ticks of visible wilting first
+- The metrics must clearly show *why* the plant is shedding (water deficit, glucose deficit)
+- The player should always have at least one viable response available (close stomata, shed a different organ manually, reduce demand)
+- Shedding the minimum viable organs (the last leaf, last root, or only stem) should trigger a special warning, not happen silently
 
 ## The Minimum Viable Plant
 
