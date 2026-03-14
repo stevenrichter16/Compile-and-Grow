@@ -24,21 +24,33 @@ A fourth implicit requirement: stomata must be at least partially open for CO2 t
 
 ## The Core Resource Loop
 
-Phase 1 has five resources:
+Phase 1 has four player-facing resources and one derived input:
 
 - **Light** — environmental, captured by leaves, not storable
 - **H2O** — absorbed by roots, lost through stomata, storable in stems
-- **CO2** — enters through stomata, environmental, not storable
 - **Energy** — intermediate product of photosynthesis, semi-storable
 - **Glucose** — the universal currency, storable, consumed by everything
+- **CO2** — enters through stomata, but not independently managed
+
+CO2 is real, but it is not a separate constraint the player thinks about. CO2 intake is entirely determined by stomata openness. When the player opens stomata, CO2 flows in. When they close stomata, CO2 stops. The player manages stomata, and CO2 follows. The limiting factor system can still report `carbon` when stomata are too closed, but the player's response is always "open stomata more" — which brings them back to the stomata/water tradeoff, not to a separate CO2 problem.
 
 The production formula follows Liebig's law of the minimum:
 
 ```
-glucose produced = min(light captured, water available, CO2 intake) × efficiency
+glucose produced per leaf = min(light captured, water available, stomata openness) × leaf efficiency
+total glucose produced    = sum across all leaves
 ```
 
 Production is limited by whichever input is scarcest. This is already exposed via `photo.get_limiting_factor()`. It means the player always has a weakest link and must decide whether to fix it or accept the limit.
+
+**Leaf efficiency** is not a single fixed number. It is determined by the leaf's current condition:
+
+- A healthy leaf at full turgor has its base efficiency (determined by size tier)
+- A wilting leaf has reduced efficiency (see Failure Modes)
+- A self-shaded leaf has reduced effective light input (see Diminishing Returns)
+- Light tracking increases effective light capture for that leaf
+
+Efficiency is not a tunable parameter the player sets directly. It is an emergent property of the leaf's situation. The player improves efficiency by keeping leaves healthy, reducing self-shading, and tracking light — not by adjusting a number.
 
 This single rule drives most of the interesting gameplay. A plant with huge leaves but tiny roots will be water-limited. A plant with open stomata in a drought will crash. The player's job is to balance inputs so that no single factor chokes the whole system.
 
@@ -46,20 +58,69 @@ This single rule drives most of the interesting gameplay. A plant with huge leav
 
 Every organ costs glucose per tick to stay alive. This is the survival constraint that makes organism design a real optimization problem rather than "just add more organs."
 
-Suggested cost tiers:
+Maintenance cost depends on both organ type and organ size:
 
-| Organ type | Maintenance cost | Why |
-|---|---|---|
-| Stems | Low | Mostly structural tissue, low metabolic activity |
-| Roots | Moderate | Active absorption requires energy |
-| Leaves | Moderate | Active photosynthetic tissue, constant gas exchange |
-| Flowers / fruit | High | Reproductive and product organs are metabolically expensive |
+| Organ type | Base cost | Size scaling | Why |
+|---|---|---|---|
+| Stems | Low | Thickness matters more than length | Mostly structural tissue, low metabolic activity |
+| Roots | Moderate | Larger roots cost more | Active absorption requires energy |
+| Leaves | Moderate | Larger leaves cost more | Active photosynthetic tissue, constant gas exchange |
+| Flowers / fruit | High | Larger outputs cost more | Reproductive and product organs are metabolically expensive |
+
+Size must have economic consequences. A Large leaf captures more light than a Small leaf, but it also costs more glucose per tick to maintain and loses more water through transpiration. If size only affected morphology with no cost scaling, the player would always choose Large and the size system would be meaningless as a design choice.
+
+Suggested size multipliers on maintenance cost:
+
+- Small: 0.7×
+- Medium: 1.0×
+- Large: 1.4×
+
+These don't need to be linear with the production benefit. A Large leaf should produce more than a Small leaf, but whether it's more *efficient* (better net income per maintenance cost) is the design question. Different size tiers could be optimal in different environments — Small leaves might be more water-efficient in drought, Large leaves might be more productive in wet, sunny conditions.
 
 The maintenance floor is the sum of all organ costs. It represents the minimum glucose income the plant needs just to stay alive, before any growth, storage, or product output.
 
-**The scaling dynamic:** Each organ the player adds raises the maintenance floor. A plant with 6 leaves and 4 roots earns more glucose than one with 2 leaves and 1 root, but it also spends more per tick just existing. There is always a point where adding another organ no longer pays for itself — diminishing returns on organ investment.
+**The scaling dynamic:** Each organ the player adds raises the maintenance floor. But the scaling tax alone is not what creates diminishing returns — the diminishing returns come from self-shading and root competition (see below). Maintenance cost is linear. The *income* from each additional organ is what falls off.
 
 This creates the core economic question of the game: **how big should my plant be?** A small plant is cheap to run but earns little. A large plant earns a lot but is expensive and fragile if conditions change. The right size depends on the environment and the commission.
+
+## Diminishing Returns: Self-Shading and Root Competition
+
+The document's earlier version said "there is always a point where adding another organ no longer pays for itself" but never explained why. The answer is not an arbitrary penalty — it comes from two biological mechanics that the player can discover and reason about.
+
+### Self-Shading
+
+Each leaf captures light. But leaves on the same plant can block each other. The first leaf on a stem gets full sunlight. The second leaf gets slightly less, because the first leaf is already intercepting some of that light. By the fifth or sixth leaf, each additional leaf is mostly in the shadow of the ones above it.
+
+```
+effective light per leaf = available light × shading factor
+shading factor decreases as total leaf area on the same attachment point increases
+```
+
+This means the glucose income from each additional leaf is less than the one before it, while the maintenance cost stays the same. Eventually, a new leaf costs more to maintain than it earns. That's the natural ceiling on leaf count.
+
+Self-shading is also what makes canopy architecture interesting. A plant that spreads its leaves across multiple attachment points (branches) shades itself less than one that stacks all its leaves on a single stem. This gives the player a reason to build branching structures — not because the game tells them to, but because the physics of light capture rewards it.
+
+Light tracking also interacts with self-shading: leaves that track the sun can angle themselves to reduce mutual shading, which is another reason the Light Tracker archetype works differently from raw leaf-count strategies.
+
+### Root Competition
+
+Roots in the same soil zone compete for the same water. The first root in a zone absorbs water freely. The second root in the same zone absorbs less, because the first root is already depleting that area. Adding more roots to the same depth and location gives diminishing water returns.
+
+```
+effective absorption per root = soil water availability × competition factor
+competition factor decreases as total root area in the same zone increases
+```
+
+This creates the depth-vs-breadth tradeoff for roots. Deep roots access a separate water pool (groundwater) and don't compete with shallow roots. Spreading roots horizontally avoids competition more than stacking them vertically. The player can solve root competition through architecture, not just by adding more roots.
+
+### Why These Mechanics Matter
+
+Self-shading and root competition are better than arbitrary diminishing return penalties because:
+
+1. **They're discoverable.** The player can look at their plant and reason about why the 5th leaf isn't producing as much as the 1st.
+2. **They're solvable.** Branching, spacing, depth choices, and light tracking all reduce the penalties. The player has agency.
+3. **They reward architecture over brute force.** A well-designed plant with 3 optimally placed leaves beats a lazy plant with 6 stacked leaves.
+4. **They emerge from the simulation.** They don't feel like a game balance number — they feel like physics.
 
 ## Water Balance
 
@@ -81,9 +142,13 @@ This is the stomata dilemma:
 
 The player cannot fully resolve this tension. They can only choose where on the spectrum to sit, and the optimal position changes with the environment. A wet environment rewards open stomata. A dry environment rewards conservation. A variable environment rewards reactive code.
 
-## Structural Load
+## Structural Load (Phase 2+)
 
-Structural support should be a real constraint, not just a visual property.
+Structural support should eventually be a real constraint, not just a visual property. But it is a separate mechanical system from the photosynthesis resource loop and should not be part of Phase 1.
+
+In Phase 1, the player's challenge is balancing light, water, and glucose. Structural mechanics add a fourth system (weight, thickness, breakage) that would dilute the core learning. Self-shading already provides a natural ceiling on leaf stacking without needing structural physics.
+
+When structural load is introduced (Phase 2 or later), the design should follow these principles:
 
 Each stem or trunk has a support capacity determined by its thickness. Every organ attached above that point contributes load. If load exceeds capacity, the plant risks breakage — losing organs it invested in.
 
@@ -98,87 +163,127 @@ This creates the height dilemma:
 - **Taller plants** need thicker stems, which cost more maintenance glucose
 - **Top-heavy plants** (many leaves on a thin stem) risk structural failure
 
-The structural constraint means the player can't just stack leaves infinitely. Height is an investment with real costs, and the player must decide whether the light advantage is worth the structural tax.
-
 Suggested rule: structural failure should damage or detach the heaviest organ above the failure point, not kill the whole plant. This makes overbuilding punishing but recoverable.
 
-## The Five Core Tradeoffs
+## The Three Core Tradeoffs
 
-These are the decisions that should feel interesting every time the player designs a plant. Each one is a genuine dilemma with no single correct answer — the right choice depends on environment, commission, and strategy.
+The earlier version of this document listed five tradeoffs, but three of them ("leaves vs. water demand," "root investment vs. maintenance budget," and "size vs. efficiency") were all variations of the same underlying tension: every organ costs maintenance but earns diminishing returns. That's the scaling tax and diminishing returns mechanics already covered above. They don't need to be restated as separate tradeoffs.
 
-### 1. Leaves vs. Water Demand
+The three genuinely distinct tradeoffs are:
 
-Each leaf is both a solar panel and a water leak. More leaves capture more light and produce more glucose, but they also lose more water through transpiration. The player must balance leaf area against root capacity, or accept water stress.
+### 1. Stomata Openness vs. Water Conservation
 
-A player who adds leaves without adding roots will see `limiting_factor = water`. A player who adds roots without adding leaves will see `limiting_factor = light`. The metrics teach the tradeoff.
+This is the most immediate, tick-by-tick tension and the one that most rewards reactive code.
 
-### 2. Stomata Openness vs. Water Conservation
+- **Open stomata** → more CO2 → more photosynthesis → more glucose income
+- **Open stomata** → more water loss → faster store depletion → closer to wilting
 
-This is the most immediate, tick-by-tick tension. Open stomata maximize CO2 intake (and therefore glucose production), but they also maximize water loss. In stable wet conditions, running open stomata is clearly correct. In drought, it's clearly wrong. In variable conditions, the player must write code that adapts.
+In stable wet conditions, open stomata are clearly correct. In drought, they're clearly wrong. In variable conditions — which is where most interesting commissions live — the player must write code that shifts stomata openness based on water state. This is the tradeoff that makes `signal Dry` and `on Dry:` feel necessary rather than optional.
 
-This tradeoff is why reactive Growl is more powerful than static configuration. A plant that responds to conditions will always outperform one that doesn't.
+A player who never adjusts stomata will either waste water in abundance or starve for CO2 in drought. Reactive code solves both.
 
-### 3. Root Investment vs. Maintenance Budget
+### 2. Growth vs. Storage
 
-Roots solve the water problem but create a maintenance problem. Each root costs glucose per tick. A plant with many large roots will never be water-limited, but its maintenance floor will be high, leaving less glucose for growth, storage, or products.
+Every unit of surplus glucose (income minus maintenance) can be spent on growth or saved in storage. This is the invest-vs-save dilemma.
 
-The player must decide: how much water security is worth the cost? A minimalist root system is efficient in good conditions but fragile. A robust root system is resilient but expensive.
+- **Growth-first** plants get big fast and compound their income. More leaves → more glucose → more growth. In stable conditions, they outproduce conservative plants. But they have no reserves. One drought triggers the wilting cascade immediately because there's no buffer.
+- **Storage-first** plants grow slowly but can survive extended stress. Their stores buy time during Stage 1 and Stage 2 of any failure cascade. But they take longer to reach full production and may miss opportunities that reward quick scaling.
 
-### 4. Growth vs. Storage
+This tradeoff gains depth because of the failure pacing system. Stores are the pacing mechanism — they determine how long a plant can endure bad conditions before wilting. A growth-first plant with zero stores goes from healthy to wilting in a few ticks. A storage-first plant can ride out a drought that would kill the growth-first plant. But when conditions are stable, the growth-first plant earns more and finishes commissions faster.
 
-Every unit of glucose can be spent on growth (bigger plant, more future income) or saved in storage (buffer against bad conditions). This is the classic invest-vs-save dilemma.
+### 3. Architecture vs. Brute Force
 
-- **Growth-first** plants get big fast and out-earn conservative plants in stable conditions. But they have no reserves. One drought can kill them.
-- **Storage-first** plants are resilient and can survive extended stress. But they grow slowly and may miss opportunities.
+This tradeoff emerges from self-shading and root competition. The player can try to maximize production by adding more organs (brute force), or by placing fewer organs more effectively (architecture).
 
-The storage priority settings (`Stores.Glucose.Priority`, etc.) are how the player expresses this tradeoff in code.
+- **Brute force:** 6 leaves on one stem, 4 roots in one zone. High maintenance cost, heavy self-shading, root competition. Gross income is high but net income may be low.
+- **Architecture:** 3 leaves spread across branches to reduce self-shading, 2 roots at different depths to avoid competition. Lower maintenance cost, each organ earns closer to its full potential. Net income may exceed the brute-force plant despite fewer organs.
 
-### 5. Size vs. Efficiency
+This is the tradeoff that makes branching, depth choices, and spatial reasoning matter. It's also why the Light Tracker archetype is interesting — it uses code (light tracking) to solve a spatial problem (self-shading) without needing to build branches.
 
-A large plant with many organs has a higher gross income than a small plant. But it also has a higher maintenance floor. **Net income** (gross minus maintenance) is what actually matters.
+## How Commissions Exploit These Tradeoffs
 
-A small, efficient plant with 2 well-placed leaves might have higher net income than a sprawling plant with 6 leaves that barely cover their own maintenance cost. The player should discover this through play, not be told.
+Constraints are interesting in the abstract. They become fun when commissions force the player to navigate them under specific pressures.
 
-This tradeoff also means that environmental downturns hit large plants harder. A plant that was profitable at 6 leaves might become unprofitable if light drops, because its maintenance cost hasn't changed but its income has.
+A well-designed commission should put at least two tradeoffs in tension with each other. Examples:
+
+**"Make a drought-resistant food crop."** This pits stomata conservation (needed for drought survival) against fruit production (which requires glucose, which requires photosynthesis, which requires open stomata). The player must find the stomata position that produces enough glucose for fruit while not hemorrhaging water. Growth-vs-storage matters too: the plant needs enough stored glucose to survive dry spells, but must grow fruit during wet ones.
+
+**"Shade a west-facing window without killing the plant."** This rewards large leaf canopy (for shade coverage) but the plant is in harsh afternoon sun with limited water. More leaves = more shade = more transpiration = more water stress. The player must balance canopy size against water budget, and might use reactive code to track light only during peak hours.
+
+**"Produce maximum glucose in a stable greenhouse."** With stable conditions and abundant water, the stomata tradeoff disappears (just open them). Growth-vs-storage shifts toward pure growth (no drought to buffer against). The commission becomes an architecture problem: how to arrange leaves and roots for maximum net income. This is where self-shading and root competition become the primary constraints.
+
+**"Survive a 50-tick drought with only initial water stores."** Pure survival challenge. Growth is irrelevant. The commission is entirely about stomata management, store sizing, and organ shedding strategy. A Small plant with Swollen stems might outlast a Large plant because its maintenance floor is lower and its stores are deeper.
+
+The pattern: each commission shifts which tradeoffs dominate. The constraints are always present, but different commissions put different ones under pressure.
 
 ## Failure Modes
 
 Failure should be gradual, visible, and recoverable — not instant death. The player should always have a chance to react and should always understand what went wrong.
 
+### The Three Stages of Decline
+
+Every failure cascade passes through three stages. This is the most important structural rule for game feel:
+
+**Stage 1: Store Depletion (warning).** The resource balance goes negative. Stores begin draining. Metrics change. The player sees numbers moving in the wrong direction but the plant is still fully functional. This is the "check engine light" phase.
+
+**Stage 2: Wilting (degraded).** Stores hit a low threshold. The plant enters a visibly degraded state. Wilting leaves have reduced photosynthetic efficiency. Stressed roots have reduced absorption. The plant is weaker but still intact — no organs are lost. The player can still fully recover by fixing the imbalance. This stage must be visually distinct so the player notices without reading metrics.
+
+**Stage 3: Shedding (damage).** If wilting persists and stores fully deplete, the plant begins dropping organs — oldest and most expensive first. Each lost organ reduces the maintenance floor, which may restore balance. The plant stabilizes at a smaller size. Shedding is the last resort, not the first response.
+
+### Failure Pacing
+
+How fast a plant moves through these stages matters enormously for game feel. The key principle: **stores are the pacing mechanism.** A plant with large glucose and water stores takes longer to move from Stage 1 to Stage 3 than a plant with no stores. This is what makes the Storage Plant archetype valuable — it doesn't prevent failure, it buys time to respond.
+
+Suggested pacing guidelines:
+
+- Stage 1 (store depletion) should last long enough for the player to notice and diagnose. For a plant with moderate stores, this should be at least 10-20 ticks of sustained deficit.
+- Stage 2 (wilting) should be visually obvious and should last at least 5-10 ticks before shedding begins. The player needs time to write or adjust code.
+- Stage 3 (shedding) should happen one organ at a time, not all at once. Each shed event is a moment for the player to react.
+
+A plant with no stores can still go from healthy to shedding quickly. That's correct — it's the consequence of the growth-over-storage tradeoff. But it should never feel instant. Even a zero-storage plant should have a few ticks of wilting before losing organs.
+
 ### Water Deficit Cascade
 
-1. Water intake falls below water loss
-2. Water stores begin draining
-3. When stores reach a low threshold, stomata partially close automatically
-4. Reduced stomata → reduced CO2 → reduced photosynthesis
-5. Growth stalls, glucose income drops
-6. If sustained: leaves begin to wilt (reduced efficiency), oldest leaves may drop
-7. If the player adds roots, opens water sources, or reduces leaf area, recovery begins
+1. Water intake falls below water loss → net water goes negative
+2. Water stores begin draining (Stage 1)
+3. When stores reach a low threshold, the plant enters water stress (Stage 2):
+   - Stomata partially close automatically to reduce water loss
+   - Reduced stomata → reduced CO2 → reduced photosynthesis
+   - Leaves visibly wilt — reduced photosynthetic efficiency
+   - Growth stalls
+4. If water stores fully deplete (Stage 3):
+   - Oldest leaves drop first (they lose the most water for the least production)
+   - Each dropped leaf reduces water demand, which may restore balance
+5. Recovery: if the player adds roots, opens water sources, or reduces leaf area, wilting reverses and dropped leaves can be regrown
 
 ### Glucose Deficit Cascade
 
-1. Glucose income falls below maintenance cost
-2. Glucose stores begin draining
-3. When stores reach a low threshold, growth halts entirely
-4. If stores reach zero, the plant begins shedding organs — oldest and most expensive first
-5. Each shed organ reduces maintenance cost, which may restore balance
-6. The plant stabilizes at a smaller size, or if it can't shed enough, it dies
-
-### Structural Failure
-
-1. Load on a stem exceeds its support capacity
-2. The heaviest or highest organ above that point detaches or takes damage
-3. The plant loses the investment but remains alive
-4. The player can prevent this by thickening stems before adding weight
+1. Glucose income falls below maintenance cost → net glucose goes negative
+2. Glucose stores begin draining (Stage 1)
+3. When stores reach a low threshold, the plant enters glucose stress (Stage 2):
+   - Growth halts entirely — all glucose goes to maintenance
+   - Organs operate at reduced efficiency (slower absorption, slower gas exchange)
+   - Plant visibly stalls
+4. If glucose stores fully deplete (Stage 3):
+   - The plant sheds its most expensive organ first
+   - Each shed organ reduces maintenance cost
+   - The plant stabilizes at a smaller size, or if it can't shed enough, it dies
+5. Recovery: if conditions improve (more light, more water), the plant rebuilds stores before resuming growth
 
 ### Light Starvation
 
 1. Available light drops below what leaves can use (shade, competition, time of day)
 2. Photosynthesis drops proportionally
 3. If glucose income falls below maintenance, the glucose deficit cascade begins
-4. This is especially relevant in competitive multi-plant scenarios
+4. This is especially relevant in competitive multi-plant scenarios where taller neighbors shade shorter plants
 
-Each cascade follows the same pattern: a resource imbalance → draw from stores → stores deplete → automatic protective response → if sustained, organ loss → possible recovery or death. The player can intervene at any point in the cascade.
+### Structural Failure (Phase 2+)
+
+When structural load is introduced, failure follows a simpler pattern: load exceeds capacity → heaviest organ above the failure point detaches or takes damage → plant loses the investment but remains alive.
+
+### Recovery Should Feel Earned
+
+When a plant recovers from wilting, it should not snap back to full health instantly. Wilted leaves should regain efficiency over several ticks. Shed organs must be regrown from scratch (costing glucose and time). This makes prevention more valuable than recovery, which rewards good design and reactive code over brute-force regrowth.
 
 ## The Minimum Viable Plant
 
