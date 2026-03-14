@@ -615,7 +615,6 @@ when Contaminated:
     Products.FilterResin.Produce(1)
 
 when AirHazard:
-    Plant.Leaves.Vents.FilterGas("toxin", "block")
     Plant.Leaves.Vents.Coating = Waxy
 
 when Overflow:
@@ -634,7 +633,7 @@ Explanation:
 - The four `when` blocks break the problem into understandable operating modes: polluted water, polluted air, full storage, and organism distress.
 - The `flow` rules make purification feel like building a living processing pipeline, using the same named conditions.
 - `when Contaminated:` shifts the root system into filtered intake and byproduct production.
-- `when AirHazard:` changes how the leaf/vent surface behaves so the plant solves both water and air problems together.
+- `when AirHazard:` applies a wax coating to vents so the plant solves both water and air problems together.
 - `when Overflow:` lets the plant tell the player or client that safe water is available.
 - `when Sick:` adds a self-protection routine, which is important for complex commissions where the environment fights back.
 
@@ -646,75 +645,70 @@ These examples show the kind of Growl behavior that should feel rewarding to wri
 - player-defined conditions stored in variables for clarity and reuse
 - built-in conditions that let beginners write reactive code immediately
 
-## Air Toxin Response: Convert vs. Block
+## Air Toxin Response: Wax Coating vs. Convert
 
-When air toxins are present, the plant has two leaf-level responses:
+When air toxins are present, the plant has two leaf-level defenses:
 
-- **Block (default):** The leaf excretes a waxy protective layer that prevents toxin absorption. Cheap — costs a small amount of glucose to maintain. The leaf can still photosynthesize normally through the wax coating, but it does not process the toxins at all.
-- **Convert (unlockable):** The leaf actively converts air toxins into usable gases such as CO2, which the plant then absorbs through normal photosynthesis. Expensive — costs significantly more glucose per tick than blocking. The payoff is that the converted CO2 feeds back into the plant's carbon economy, so a well-resourced plant can profit from toxic air rather than just surviving it.
+- **Wax coating (default):** Leaves with a waxy coating passively prevent toxin absorption. Cheap — costs a small amount of glucose to maintain. The leaf can still photosynthesize normally through the wax, but it does not process the toxins at all. No special method call is needed — the coating itself provides the protection.
+- **Convert (unlockable):** The leaf actively converts air toxins into usable gases such as CO2, which the plant then absorbs through normal photosynthesis. Expensive — costs significantly more glucose per tick than wax alone. The payoff is that the converted CO2 feeds back into the plant's carbon economy, so a well-resourced plant can profit from toxic air rather than just surviving it.
 
 ### Design Intent
 
-The mechanic creates a resource allocation decision within a single environmental threat. The player is not choosing between "defend" and "don't defend" — they are choosing how much of their canopy to invest in active conversion vs. passive blocking.
+The mechanic creates a resource allocation decision within a single environmental threat. The player is not choosing between "defend" and "don't defend" — they are choosing how much of their canopy to invest in active conversion vs. passive wax coating.
 
 The tradeoff:
 
 - A plant that converts on every leaf burns glucose faster than the CO2 benefit replenishes it, especially under compound stress (drought + toxins).
-- A plant that blocks on every leaf survives cheaply but misses the CO2 upside.
-- The optimal strategy is a ratio: a few leaves or one leaf group converts, while the rest block. The exact split depends on the plant's glucose reserves, canopy size, and how toxic the air is.
+- A plant that waxes every leaf survives cheaply but misses the CO2 upside.
+- The optimal strategy is a ratio: a few leaves or one leaf group converts, while the rest stay waxed. The exact split depends on the plant's glucose reserves, canopy size, and how toxic the air is.
 
 Because `Convert` is an unlockable method, beginners start with wax-only defense (simple, safe) and graduate to the mixed strategy once they understand the glucose economy well enough to manage the cost.
 
-### Example 1: Simple Block-Only Defense
+### Example 1: Simple Wax-Only Defense
 
-A beginner's approach — every leaf blocks, no conversion. Safe and cheap.
+A beginner's approach — every leaf is waxed, no conversion. Safe and cheap.
 
 ```growl
 Recipes.FilterReed.Apply()
 
 when AirHazard:
-    Plant.Leaves.All.Block("toxin")
     Plant.Leaves.All.Coating = Waxy
 ```
 
-### Example 2: Single Converter Group with Blocking Majority
+### Example 2: Single Converter Group with Waxed Majority
 
-The player splits their canopy into two groups: a small converter set and a larger blocker set. The converters spend glucose to turn toxins into CO2, while the blockers protect cheaply.
+The player splits their canopy into two groups: a small converter set and a larger waxed set. The converters spend glucose to turn toxins into CO2, while the waxed leaves protect cheaply.
 
 ```growl
 Recipes.FilterReed.Apply()
 
 Plant.Leaves.Converters.Count = 2
-Plant.Leaves.Blockers.Count = 4
+Plant.Leaves.Waxed.Count = 4
 
 when AirHazard:
     Plant.Leaves.Converters.Convert("toxin", "CO2")
-    Plant.Leaves.Blockers.Block("toxin")
-    Plant.Leaves.Blockers.Coating = Waxy
+    Plant.Leaves.Waxed.Coating = Waxy
 ```
 
 ### Example 3: Glucose-Aware Conversion Budget
 
-The player ties conversion to glucose reserves. When stores are healthy, converters run and the plant profits from the extra CO2. When glucose drops, converters fall back to cheap blocking so the plant doesn't starve itself fighting toxins.
+The player ties conversion to glucose reserves. When stores are healthy, converters run and the plant profits from the extra CO2. When glucose drops, converters fall back to wax coating so the plant doesn't starve itself fighting toxins.
 
 ```growl
 Recipes.FilterReed.Apply()
 
 Plant.Leaves.Converters.Count = 3
-Plant.Leaves.Blockers.Count = 3
+Plant.Leaves.Waxed.Count = 3
 
 CanAffordConversion = Stores.Glucose > Medium and not Starving
 
 when AirHazard and CanAffordConversion:
     Plant.Leaves.Converters.Convert("toxin", "CO2")
-    Plant.Leaves.Blockers.Block("toxin")
-    Plant.Leaves.Blockers.Coating = Waxy
+    Plant.Leaves.Waxed.Coating = Waxy
 
 when AirHazard and not CanAffordConversion:
-    Plant.Leaves.Converters.Block("toxin")
     Plant.Leaves.Converters.Coating = Waxy
-    Plant.Leaves.Blockers.Block("toxin")
-    Plant.Leaves.Blockers.Coating = Waxy
+    Plant.Leaves.Waxed.Coating = Waxy
 ```
 
 ### Example 4: Scaling Conversion With Canopy Size
@@ -725,14 +719,13 @@ A more advanced program that dynamically adjusts how many leaves convert based o
 Recipes.PurifierCanopy.Apply()
 
 Plant.Leaves.Converters.Count = 2
-Plant.Leaves.Blockers.Count = 4
+Plant.Leaves.Waxed.Count = 4
 
 GlucoseRich = Stores.Glucose.IsHigh() and Metrics.PhotoRate > Strong
 ToxinHeavy = Env.Air.Chemicals.Severity > High
 
 when AirHazard:
-    Plant.Leaves.Blockers.Block("toxin")
-    Plant.Leaves.Blockers.Coating = Waxy
+    Plant.Leaves.Waxed.Coating = Waxy
 
 when AirHazard and GlucoseRich:
     Plant.Leaves.Converters.Convert("toxin", "CO2")
@@ -742,14 +735,13 @@ when AirHazard and ToxinHeavy and GlucoseRich:
     Policies.Storage.GlucosePriority = 3
 
 when AirHazard and Starving:
-    Plant.Leaves.Converters.Block("toxin")
     Plant.Leaves.Converters.Coating = Waxy
     Plant.Leaves.Converters.ShedOldest(1)
 ```
 
 The progression across these examples:
 
-1. **Block-only** — beginners survive toxins without understanding glucose costs
+1. **Wax-only** — beginners survive toxins without understanding glucose costs
 2. **Fixed split** — intermediate players discover the converter unlock and assign a ratio
 3. **Budget-aware split** — the player ties conversion to glucose state, so the plant adapts
 4. **Dynamic scaling** — advanced players grow their converter capacity when the economy supports it and shed it when it doesn't
