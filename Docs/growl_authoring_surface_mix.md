@@ -746,6 +746,94 @@ The progression across these examples:
 3. **Budget-aware split** — the player ties conversion to glucose state, so the plant adapts
 4. **Dynamic scaling** — advanced players grow their converter capacity when the economy supports it and shed it when it doesn't
 
+## Multi-Stem Growth (Unlockable)
+
+By default, a plant grows with a single stem — one vertical trunk that concentrates the plant's energy upward. The **multi-stem unlock** lets the player grow additional stems from the base, changing the plant's growth profile.
+
+### Core Mechanic
+
+- **Leaf efficiency:** Multiple stems produce more leaves for less glucose than a single stem would need to grow the same number of leaves. Each additional stem branches out with its own leaf sites, so the plant gets more photosynthetic surface per unit of growth energy.
+- **Water cost:** Water demand scales linearly with the number of stems. Two stems need twice the water intake of one. Three stems need three times. This is a hard, predictable cost the player can plan around.
+- **Height penalty:** Energy is divided among stems rather than focused on a single trunk, so multi-stemmed plants grow shorter. Each stem is individually weaker and slower to gain height than a single-stem plant's trunk.
+
+### Design Intent
+
+The tradeoff is leaf output vs. water budget. A multi-stemmed plant is a better photosynthesizer in water-rich environments — it builds canopy cheaply and floods itself with glucose. But in dry conditions, the water overhead can starve the plant faster than the extra leaves can compensate.
+
+This creates an environmental read: the player looks at the scenario's water availability and decides whether to invest in multi-stem or stay single. It's not a permanent commitment — stems can be grown or shed over the course of a run — but adding stems costs glucose upfront, so constant switching is wasteful.
+
+The height penalty matters if light competition is present. A single-stem plant can reach higher light tiers that multi-stem plants cannot access. In open environments with no shading, height doesn't matter and multi-stem is strictly better (if water allows). In crowded canopies, the player has to weigh cheap leaves against reachable light.
+
+### Interaction With Other Systems
+
+- **Toxin response:** More leaves means more surface area to wax during air toxin events. The glucose cost of maintaining wax coatings across a large multi-stem canopy can add up. Players who unlock Convert can offset this by turning a subset of their abundant leaves into converters.
+- **Structural risk:** Multiple stems are individually weaker. If storm or wind mechanics are present, a multi-stem plant may lose individual stems but survive through redundancy. A single-stem plant is sturdier but has no backup if its trunk is damaged.
+
+### Example 1: Basic Multi-Stem Setup
+
+The player unlocks multi-stem and grows a bushy, water-hungry plant with high leaf output.
+
+```growl
+Plant.Stems.Count = 3
+Plant.Stems.Growth = Outward
+
+when Wet:
+    Plant.Stems.GrowNew(1)
+
+when Dry:
+    Plant.Stems.ShedWeakest(1)
+```
+
+### Example 2: Adaptive Stem Count
+
+The player ties stem count to water availability, growing stems when water is plentiful and shedding them when it drops.
+
+```growl
+Plant.Stems.Count = 2
+
+WaterRich = Stores.Water.IsHigh() and Env.Soil.Moisture > Damp
+WaterTight = Stores.Water < Low or Env.Soil.Moisture < Dry
+
+when WaterRich:
+    Plant.Stems.GrowNew(1)
+    Plant.Leaves.All.Coating = None
+
+when WaterTight:
+    Plant.Stems.ShedWeakest(1)
+```
+
+### Example 3: Multi-Stem With Toxin Management
+
+A multi-stem plant that takes advantage of its large canopy during toxin events — waxing most leaves cheaply while running a small converter group.
+
+```growl
+Plant.Stems.Count = 4
+Plant.Stems.Growth = Outward
+
+Plant.Leaves.Converters.Count = 2
+Plant.Leaves.Waxed.Count = Plant.Leaves.Total - Plant.Leaves.Converters.Count
+
+CanAffordConversion = Stores.Glucose > Medium and not Starving
+
+when AirHazard and CanAffordConversion:
+    Plant.Leaves.Converters.Convert("toxin", "CO2")
+    Plant.Leaves.Waxed.Coating = Waxy
+
+when AirHazard and not CanAffordConversion:
+    Plant.Leaves.Converters.Coating = Waxy
+    Plant.Leaves.Waxed.Coating = Waxy
+
+when WaterTight:
+    Plant.Stems.ShedWeakest(1)
+```
+
+The progression:
+
+1. **Single stem (default)** — beginners grow tall with predictable water costs
+2. **Fixed multi-stem** — intermediate players unlock multi-stem and pick a count
+3. **Adaptive stem count** — the player ties stem growth to water state so the plant responds to conditions
+4. **Multi-stem with layered systems** — advanced players combine multi-stem's leaf abundance with toxin conversion and environmental reads
+
 ## Design Benefits
 
 This mix should improve Growl in the following ways:
