@@ -834,6 +834,162 @@ The progression:
 3. **Adaptive stem count** — the player ties stem growth to water state so the plant responds to conditions
 4. **Multi-stem with layered systems** — advanced players combine multi-stem's leaf abundance with toxin conversion and environmental reads
 
+## Light Levels (Commission-Defined)
+
+Light is the primary resource that makes height matter. Every commission defines its own **light profile** — four light levels (0–3) mapped to height bands that change from commission to commission. This means "grow tall" is not universally correct. The player has to read the environment and place their leaves in the right band.
+
+### Core Mechanic
+
+- **Four light levels (0–3).** Level 3 is the brightest, level 0 is the dimmest. The levels always mean the same thing in terms of photosynthesis output — a leaf at level 3 always produces more glucose than a leaf at level 1. What changes is *where* those levels sit in the vertical space.
+- **Commission-defined height bands.** Each commission assigns light levels to height ranges. A forest-floor commission might put level 3 near the ground (sunlight through a canopy gap) and level 0 at the top (dense canopy shade). A meadow commission might stack them conventionally with level 3 at the top. The player sees the light profile before the run starts and plans accordingly.
+- **Photosynthesis scales with light level.** Leaves at higher light levels produce more glucose per tick. This is passive — the player doesn't control it directly, they control it by choosing where to grow. A leaf at level 3 might produce 3x the glucose of a leaf at level 0. The exact multiplier is a balance knob, but the relationship is always "higher level = more output."
+
+### Light Profile Examples
+
+A conventional open-sky environment where light increases with height:
+
+```
+Commission: "Open Meadow"
+Light Profile:
+  Level 3: 15m+       (full sun, open sky)
+  Level 2: 10m – 15m  (bright, minimal obstruction)
+  Level 1: 5m – 10m   (partial shade from neighbors)
+  Level 0: 0m – 5m    (ground shade)
+```
+
+An inverted forest-floor environment where a canopy gap lets light hit the ground:
+
+```
+Commission: "Forest Floor Recovery"
+Light Profile:
+  Level 3: 0m – 2m    (clearing gap, full sun)
+  Level 2: 2m – 5m    (partial shade)
+  Level 1: 5m – 12m   (heavy canopy shade)
+  Level 0: 12m+       (dense upper canopy, almost no light)
+```
+
+A cliff face where light only hits a narrow band:
+
+```
+Commission: "Cliff Face"
+Light Profile:
+  Level 3: 3m – 6m    (direct sun hits the rock face here)
+  Level 2: 0m – 3m    (reflected light from the ground)
+  Level 1: 6m – 10m   (shadowed by overhang)
+  Level 0: 10m+       (deep overhang shadow)
+```
+
+### Interaction With Multi-Stem
+
+Light profiles are the main reason the player can't default to one growth strategy across all commissions.
+
+- **Conventional profiles (light at the top):** Single-stem plants dominate. They reach the high bands where glucose production is strongest. Multi-stem plants spread their energy across shorter stems and their leaves sit at lower, dimmer levels. Multi-stem can still work here if water is abundant and the sheer leaf count at level 1–2 outproduces fewer leaves at level 3, but it's an uphill fight.
+- **Inverted profiles (light at the bottom):** Multi-stem plants dominate. Their wide, low canopy sits squarely in the brightest band. A single-stem plant grows through the good light and into the dark. The player either stays short (wasting single-stem's height advantage) or goes tall and loses photosynthesis output.
+- **Banded profiles (light in the middle):** Both strategies are viable. Single-stem can target the band precisely. Multi-stem can spread across it with more leaves. The player picks based on water budget and commission goals.
+
+This means the player has to re-read the light profile on every commission and adjust their Growl script. A script that dominates one commission may be terrible for the next.
+
+### Commission Requirements
+
+Some commissions require the plant to have leaves at a specific light level, independent of photosynthesis. These are explicit goals the player must meet to complete the commission.
+
+```
+Commission: "Canopy Restoration"
+Objective: Maintain at least 4 leaves at Light Level 3 for 30 ticks
+Light Profile:
+  Level 3: 20m+
+  Level 2: 12m – 20m
+  Level 1: 5m – 12m
+  Level 0: 0m – 5m
+```
+
+This commission is hard for multi-stem plants — reaching 20m with multiple stems requires heavy glucose investment in a single dominant stem while keeping the others short. The player might use a focused growth command:
+
+```growl
+Plant.Stems.Count = 3
+Plant.Stems.Leader = Tallest
+Plant.Stems.Leader.Priority = High
+
+when Plant.Stems.Leader.Height < 20:
+    Plant.Stems.Leader.GrowUp(2)
+    Plant.Stems.Others.GrowUp(0)
+
+when Plant.Stems.Leader.Height >= 20:
+    Plant.Stems.Others.GrowOut(1)
+```
+
+### Visibility
+
+The light profile must be visible to the player at two points:
+
+1. **Commission select screen.** The player sees the light profile as part of the commission briefing before committing. This lets them plan their script.
+2. **During the run.** A vertical bar on the HUD shows the four light bands with the plant's current height marked. The player can see which band their leaves occupy in real time.
+
+This prevents the "discovered mid-run" frustration. The light profile is part of the puzzle, not a hidden gotcha.
+
+### Example 1: Script for an Inverted Light Commission
+
+The player reads the light profile, sees that light level 3 is near the ground, and writes a wide, low multi-stem build.
+
+```growl
+Plant.Stems.Count = 4
+Plant.Stems.Growth = Outward
+Plant.Stems.MaxHeight = 2
+
+when Wet:
+    Plant.Stems.GrowNew(1)
+
+when Plant.Stems.Any.Height > 2:
+    Plant.Stems.TrimTo(2)
+```
+
+### Example 2: Script for a Banded Light Commission
+
+Light level 3 is in a narrow band (3m–6m). The player uses a moderate stem count and targets the band precisely.
+
+```growl
+Plant.Stems.Count = 2
+Plant.Stems.Growth = Upward
+
+TargetMin = 3
+TargetMax = 6
+
+when Plant.Stems.Tallest.Height < TargetMin:
+    Plant.Stems.All.GrowUp(1)
+
+when Plant.Stems.Tallest.Height > TargetMax:
+    Plant.Stems.All.GrowUp(0)
+    Plant.Leaves.All.GrowOut(1)
+```
+
+### Example 3: Adaptive Light Targeting
+
+An advanced player writes a script that reads the light level at the plant's current height and adjusts growth direction accordingly.
+
+```growl
+Plant.Stems.Count = 2
+
+CurrentLight = Env.Light.AtHeight(Plant.Stems.Tallest.Height)
+LightAbove = Env.Light.AtHeight(Plant.Stems.Tallest.Height + 2)
+
+when LightAbove > CurrentLight:
+    Plant.Stems.Leader.GrowUp(2)
+
+when LightAbove < CurrentLight:
+    Plant.Stems.All.GrowOut(1)
+    Plant.Stems.All.GrowUp(0)
+
+when LightAbove == CurrentLight:
+    Plant.Leaves.All.GrowOut(1)
+```
+
+The progression:
+
+1. **Read the profile, pick a height** — beginners look at the commission's light profile and aim for a fixed height
+2. **Match stem strategy to profile** — intermediate players choose single-stem or multi-stem based on where the light is
+3. **Target the band precisely** — the player caps height and spreads leaves within the brightest zone
+4. **Adaptive light chasing** — advanced players query light at runtime and steer growth toward the best available level
+
 ## Design Benefits
 
 This mix should improve Growl in the following ways:
